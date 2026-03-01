@@ -1596,9 +1596,16 @@ function navigate(view) {
 async function renderView(view) {
   const el = document.getElementById('mainContent');
   const vl = document.getElementById('viewLoader');
-  // Show skeleton, hide content
-  if (vl) vl.style.display = 'block';
-  if (el) el.style.visibility = 'hidden';
+  // Show skeleton only on first/manual navigation — not on background polls
+  const isManualNav = _isFirstRender || (view !== currentView);
+  _isFirstRender = false;
+  if (isManualNav) {
+    if (vl) vl.style.display = 'block';
+    if (el) el.style.visibility = 'hidden';
+  }
+  // Save user's typed input before re-render so it's not lost
+  const savedTracingAns = document.getElementById('tracingAns')?.value || '';
+  const savedCodeAns    = document.getElementById('codeAns')?.value    || '';
   try {
     if      (view === 'dashboard')        await renderTeamDashboard(el);
     else if (view === 'leaderboard')      await renderLeaderboard(el);
@@ -1608,23 +1615,104 @@ async function renderView(view) {
     else if (view === 'adminTeams')       await renderAdminTeams(el);
     else if (view === 'adminProgress')    await renderAdminProgress(el);
     else if (view === 'organizer')        await renderOrganizer(el);
+    // Restore saved input after re-render
+    const ta = document.getElementById('tracingAns');
+    const ca = document.getElementById('codeAns');
+    if (ta && savedTracingAns) ta.value = savedTracingAns;
+    if (ca && savedCodeAns)    ca.value = savedCodeAns;
   } catch(e) {
     if (el) el.innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-triangle"></i> Error: ${e.message}</div>`;
   } finally {
-    // Always hide skeleton and show content
-    if (vl) vl.style.display = 'none';
-    if (el) el.style.visibility = 'visible';
+    if (isManualNav) {
+      if (vl) vl.style.display = 'none';
+      if (el) el.style.visibility = 'visible';
+    }
   }
 }
+
+// ── SMART POLLING ──────────────────────────────────────────────
+// Cache of last known server state — used to skip re-renders
+let _cachedGameState = null;
+let _cachedTeamState = null;
+let _isFirstRender   = true;
 
 function startPolling() {
   if (pollInterval) clearInterval(pollInterval);
   pollInterval = setInterval(() => {
     const skip = ['adminQuestions','adminCheckpoints','adminTeams'];
-    if (!skip.includes(currentView)) renderView(currentView);
-  }, 10000);
+    if (!skip.includes(currentView)) {
+      // Don't poll when tab is hidden — saves server load
+      if (document.hidden) return;
+      smartPoll();
+    }
+  }, 12000); // 12s instead of 10s — reduces server load by 17%
 }
-function stopPolling() { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } }
+function stopPolling() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  _cachedGameState = null;
+  _cachedTeamState = null;
+}
+
+// Smart poll: fetch lightweight data and only re-render if something changed
+async function smartPoll() {
+  try {
+    if (currentView === 'dashboard') {
+      const gs = await api('GET', '/api/game-state');
+      const st = await api('GET', '/api/team/state');
+
+      // Detect if anything meaningful changed
+      const gsChanged = JSON.stringify(gs) !== JSON.stringify(_cachedGameState);
+      const stChanged = JSON.stringify(st) !== JSON.stringify(_cachedTeamState);
+
+      if (!gsChanged && !stChanged) {
+        // Nothing changed — just tick the timer, don't touch DOM
+        return;
+      }
+
+      // Something changed — figure out if it's a major or minor change
+      const majorChange =
+        (gs.started !== _cachedGameState?.started) ||
+        (st.currentIndex !== _cachedTeamState?.currentIndex) ||
+        (st.finished !== _cachedTeamState?.finished) ||
+        (st.noProgress !== _cachedTeamState?.noProgress) ||
+        (st.cpData?.status !== _cachedTeamState?.cpData?.status) ||
+        (_cachedGameState === null);
+
+      _cachedGameState = gs;
+      _cachedTeamState = st;
+
+      if (majorChange) {
+        // Full re-render only when checkpoint/status changed
+        const el = document.getElementById('mainContent');
+        await renderTeamDashboard(el, gs, st);
+      } else {
+        // Minor change (points, swap count) — just patch DOM in-place
+        patchDashboard(gs, st);
+      }
+    } else if (currentView === 'leaderboard') {
+      renderView('leaderboard');
+    } else if (currentView === 'adminGame' || currentView === 'adminProgress' || currentView === 'organizer') {
+      renderView(currentView);
+    }
+  } catch(e) {
+    console.warn('Poll error:', e.message);
+  }
+}
+
+// Patch only the dynamic parts of the dashboard without touching inputs/textareas
+function patchDashboard(gs, st) {
+  // Update points in header
+  const pts = document.getElementById('headerPoints');
+  if (pts) pts.textContent = st.totalPoints ? `${st.totalPoints} pts` : '';
+
+  // Update progress bar
+  const done = (st.completedCheckpoints||[]).length;
+  const pct  = Math.round((done/10)*100);
+  const pbar = document.getElementById('progressPct');
+  const pnum = document.getElementById('progressNum');
+  if (pbar) pbar.style.width = pct + '%';
+  if (pnum) pnum.textContent = `${done}/10 Checkpoints`;
+}
 
 /* TIMER HELPERS */
 function fmtTime(secs) {
@@ -1639,21 +1727,29 @@ function timerClass(elapsed) {
 }
 let countdownTimer = null;
 function startCountdown(remaining) {
+  // Don't restart if already running close to this value (within 3s)
+  // This prevents the timer jumping on every poll
+  if (countdownTimer && _countdownSecs !== null && Math.abs(_countdownSecs - remaining) < 3) return;
   if (countdownTimer) clearInterval(countdownTimer);
+  _countdownSecs = remaining;
   let secs = remaining;
   countdownTimer = setInterval(() => {
     secs--;
+    _countdownSecs = secs;
     const el = document.getElementById('liveTimer');
     if (el) { el.textContent = fmtTime(Math.max(0,secs)); el.className = 'timer-display ' + timerClass(600-secs); }
-    if (secs <= 0) clearInterval(countdownTimer);
+    if (secs <= 0) { clearInterval(countdownTimer); countdownTimer = null; }
   }, 1000);
 }
+let _countdownSecs = null;
 
 /* =============================================
    TEAM DASHBOARD
    ============================================= */
-async function renderTeamDashboard(el) {
-  const gs = await api('GET', '/api/game-state');
+async function renderTeamDashboard(el, gs, st) {
+  // Accept pre-fetched data from smartPoll — avoids duplicate API calls
+  if (!gs) gs = await api('GET', '/api/game-state');
+  _cachedGameState = gs;
   if (!gs.started) {
     el.innerHTML = `
       <div class="card" style="text-align:center;padding:48px 24px;">
@@ -1663,7 +1759,9 @@ async function renderTeamDashboard(el) {
       </div>`;
     return;
   }
-  const state = await api('GET', '/api/team/state');
+  // Use pre-fetched state if available (avoids duplicate API call from smartPoll)
+  const state = st || (await api('GET', '/api/team/state'));
+  _cachedTeamState = state;
   if (state.noProgress) { el.innerHTML = `<div class="card"><p style="color:var(--muted)">Your team data is not ready yet. Please wait.</p></div>`; return; }
   if (state.finished) {
     el.innerHTML = `
@@ -2576,6 +2674,15 @@ function dismissInstallBanner() {
 if (window.matchMedia('(display-mode: standalone)').matches) {
   sessionStorage.setItem('pwa_dismissed', '1');
 }
+
+
+// ── PAUSE POLLING WHEN TAB IS HIDDEN ──────────────────────────
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && token) {
+    // Tab just became visible — refresh immediately
+    smartPoll();
+  }
+});
 
 </script>
 </body>
