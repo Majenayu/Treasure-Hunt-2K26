@@ -78,12 +78,18 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
   res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.sendFile(path.join(__dirname, 'manifest.json'));
+  const mPath = require('fs').existsSync(path.join(__dirname, 'manifest.json'))
+    ? path.join(__dirname, 'manifest.json')
+    : path.join(__dirname, 'Manifest.json');
+  res.sendFile(mPath);
 });
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'no-cache'); // SW must always be fresh
-  res.sendFile(path.join(__dirname, 'sw.js'));
+  const swPath = require('fs').existsSync(path.join(__dirname, 'sw.js'))
+    ? path.join(__dirname, 'sw.js')
+    : path.join(__dirname, 'SW.js');
+  res.sendFile(swPath);
 });
 
 // Cache static assets aggressively
@@ -1113,7 +1119,7 @@ app.post('/api/admin/teams/:teamId/add-swaps', auth, adminOnly, async (req, res)
 });
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 CodeHunt 2k26 server started on port ${PORT}`);
   console.log('🔌 Connecting to MongoDB...');
   tryConnect();
