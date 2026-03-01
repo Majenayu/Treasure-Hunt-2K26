@@ -289,6 +289,27 @@ function deriveCategoryFromYears(y1, y2) {
 }
 
 // ─── GAME LOGIC ───────────────────────────────────────────────────────────────
+// ─── POINT CALCULATION HELPERS ───────────────────────────────────────────────
+// Tracing: 200 pts if ≤2 min; -10/min for min 2–5; -5/min after 5 min
+function calcTracingPoints(elapsedSeconds) {
+  const mins = elapsedSeconds / 60;
+  if (mins <= 2) return 200;
+  const minutesOver2 = Math.floor(mins - 2);
+  const phase1 = Math.min(minutesOver2, 3); // 3 minutes of -10 (covers min 2→5)
+  const phase2 = Math.max(0, minutesOver2 - 3); // beyond 5 min: -5/min
+  return Math.max(0, 200 - phase1 * 10 - phase2 * 5);
+}
+
+// Coding: 300 pts if ≤2 min; same deduction tiers as tracing
+function calcCodingPoints(timerUsedSeconds) {
+  const mins = timerUsedSeconds / 60;
+  if (mins <= 2) return 300;
+  const minutesOver2 = Math.floor(mins - 2);
+  const phase1 = Math.min(minutesOver2, 3);
+  const phase2 = Math.max(0, minutesOver2 - 3);
+  return Math.max(0, 300 - phase1 * 10 - phase2 * 5);
+}
+
 function seededShuffle(arr, seed) {
   const a = [...arr]; let s = seed;
   for (let i = a.length - 1; i > 0; i--) {
@@ -799,7 +820,9 @@ app.get('/api/team/state', auth, async (req, res) => {
       questionCode: q?.code || null,
       questionNumber: q?.questionNumber || null,
       questionAnswer: q?.answer || null,
-      status: 'pending', timerStartedAt: null, timerPausedAt: null,
+      // Tracing timer auto-starts the moment the clue/location is revealed to the team
+      status: seqEntry.type === 'tracing' ? 'in-progress' : 'pending',
+      timerStartedAt: seqEntry.type === 'tracing' ? new Date() : null, timerPausedAt: null,
       timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
     };
     await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: cpData } });
@@ -841,9 +864,11 @@ app.post('/api/team/submit', auth, async (req, res) => {
   if (cpData.type === 'tracing') {
     const correct = answer.trim().toLowerCase() === (cpData.questionAnswer || '').trim().toLowerCase();
     if (!correct) return res.json({ correct: false, message: 'Wrong answer, try again!' });
-    const timeTaken = (Date.now() - new Date(gs.startTime).getTime()) / 1000;
-    const bonus = Math.max(0, Math.floor((1 - Math.min(timeTaken, 7200) / 7200) * 50));
-    const points = 100 + bonus;
+    // Calculate points based on time elapsed since clue was revealed (timer auto-started)
+    let elapsedSeconds = cpData.timerUsed || 0;
+    if (cpData.timerStartedAt && !cpData.timerPausedAt)
+      elapsedSeconds += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+    const points = calcTracingPoints(elapsedSeconds);
     await db.collection('team_progress').updateOne(
       { teamId, 'checkpoints.index': idx },
       { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $push: { completedCheckpoints: idx }, $inc: { totalPoints: points } }
@@ -949,9 +974,12 @@ app.post('/api/organizer/mark-status', auth, orgOrAdmin, async (req, res) => {
   if (!cpData) return res.status(400).json({ error: 'Not found' });
   if (status === 'completed') {
     const isDeferred = (progress.deferredCoding || []).find(d => d.originalIndex === idx && !d.completed);
-    let points = 200;
-    if (cpData.timerExpired) points = 120;
-    if (isDeferred) points = 80;
+    // Calculate coding points based on actual timer used (pausing pauses the deduction)
+    let timerUsed = cpData.timerUsed || 0;
+    if (cpData.timerStartedAt && !cpData.timerPausedAt)
+      timerUsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+    let points = calcCodingPoints(timerUsed);
+    if (isDeferred) points = Math.floor(points * 0.8); // 20% penalty for deferred
     await db.collection('team_progress').updateOne(
       { teamId: teamIdInt, 'checkpoints.index': idx },
       { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $inc: { totalPoints: points } }
@@ -976,8 +1004,8 @@ app.post('/api/organizer/mark-final', auth, orgOrAdmin, async (req, res) => {
   if (!cpData) return res.status(400).json({ error: 'Final checkpoint not yet started' });
   if (status === 'completed') {
     const gs = await db.collection('game_state').findOne({ key: 'main' });
-    let points = 300;
-    if (gs.finalCodingStartTime && (Date.now() - new Date(gs.finalCodingStartTime).getTime()) / 1000 > 600) points = 180;
+    // Final round: flat 400 points, no time-based deduction
+    const points = 400;
     await db.collection('team_progress').updateOne(
       { teamId: teamIdInt, 'checkpoints.index': 9 },
       { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $inc: { totalPoints: points } }
@@ -1078,7 +1106,8 @@ app.post('/api/team/swap-question', auth, async (req, res) => {
       questionCode: newQ.code || null,
       questionNumber: newQ.questionNumber || null,
       questionAnswer: newQ.answer || null,
-      status: 'pending', timerStartedAt: null, timerPausedAt: null,
+      status: seqEntry.type === 'tracing' ? 'in-progress' : 'pending',
+      timerStartedAt: seqEntry.type === 'tracing' ? new Date() : null, timerPausedAt: null,
       timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
     };
     await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: newCp } });
