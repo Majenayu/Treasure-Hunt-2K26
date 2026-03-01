@@ -1,0 +1,1120 @@
+const express = require('express');
+const { MongoClient, ObjectId } = require('mongodb');
+const crypto = require('crypto');
+const path = require('path');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = 'mongodb+srv://pra:pra@pra.si69pt4.mongodb.net/?appName=pra';
+const DB_NAME = 'codehunt';
+
+let db;
+let dbConnected = false;
+
+// ─── RATE LIMITERS ────────────────────────────────────────────────────────────
+// Auth endpoints: 15 attempts per 15 minutes per IP (prevents brute force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please wait 15 minutes and try again.' }
+});
+
+// General API: 300 requests per 15 minutes per IP (handles large event traffic)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' }
+});
+
+// Leaderboard / game-state: 60 per minute (polled frequently by all teams)
+const pollLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Polling too fast. Please wait.' }
+});
+
+// ─── SESSION HELPERS ──────────────────────────────────────────────────────────
+async function setSession(token, data) {
+  await db.collection('sessions').insertOne({
+    token, role: data.role, teamId: data.teamId || null, username: data.username || null,
+    createdAt: new Date(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+  });
+}
+async function getSession(token) {
+  if (!token) return null;
+  return db.collection('sessions').findOne({ token, expiresAt: { $gt: new Date() } });
+}
+async function deleteSession(token) {
+  await db.collection('sessions').deleteOne({ token });
+}
+
+// ─── MIDDLEWARE ───────────────────────────────────────────────────────────────
+// Compress all responses (gzip/brotli) — reduces bandwidth ~70% under load
+app.use(compression());
+
+// Trust proxy (for correct IP detection on Render)
+app.set('trust proxy', 1);
+
+app.use(express.json({ limit: '1mb' }));
+
+// Apply rate limiters — auth routes strict, polling routes moderate, rest generous
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
+app.use('/api/leaderboard', pollLimiter);
+app.use('/api/game-state', pollLimiter);
+app.use('/api/', apiLimiter);
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// PWA manifest and service worker
+app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'manifest.json'));
+});
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache'); // SW must always be fresh
+  res.sendFile(path.join(__dirname, 'sw.js'));
+});
+
+// Cache static assets aggressively
+app.use(express.static(__dirname, {
+  maxAge: '1d',
+  etag: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
+
+app.use((req, res, next) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ error: 'Server is starting up. Please wait a moment and try again.' });
+  }
+  next();
+});
+
+// ─── DB CONNECTION ────────────────────────────────────────────────────────────
+async function connectDB() {
+  const client = new MongoClient(MONGO_URI, {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
+    socketTimeoutMS: 45000,
+    tls: true,
+  });
+  await client.connect();
+  db = client.db(DB_NAME);
+  dbConnected = true;
+  console.log('✅ Connected to MongoDB');
+
+  client.on('close', () => {
+    dbConnected = false;
+    console.warn('⚠️  MongoDB connection closed. Reconnecting...');
+    setTimeout(() => tryConnect(5), 5000);
+  });
+
+  await initializeDB();
+}
+
+async function tryConnect(retries = 10) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      console.log(`🔌 MongoDB connection attempt ${i}/${retries}...`);
+      await connectDB();
+      console.log(`🚀 CodeHunt 2k26 ready on port ${PORT}`);
+      return;
+    } catch (err) {
+      console.error(`❌ Attempt ${i} failed: ${err.message}`);
+      if (i === retries) {
+        console.error('💀 All connection attempts failed.');
+        process.exit(1);
+      }
+      const wait = Math.min(5000 * i, 30000);
+      console.log(`⏳ Retrying in ${wait / 1000}s...`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
+// ─── DB INITIALISATION ────────────────────────────────────────────────────────
+async function initializeDB() {
+  const teamsCol = db.collection('teams');
+
+  // ── STEP 1: Drop any existing teamId index (so we can recreate clean) ────
+  try {
+    await teamsCol.dropIndex('teamId_1');
+    console.log('🗑️  Dropped old teamId index');
+  } catch (e) { /* didn't exist — fine */ }
+
+  // ── STEP 2: Aggressively remove ALL duplicate teamId documents ────────────
+  const allDocs = await teamsCol.find({}).toArray();
+  const seen = new Map(); // teamId → best doc to keep
+  for (const doc of allDocs) {
+    const tid = doc.teamId;
+    if (!seen.has(tid)) {
+      seen.set(tid, doc);
+    } else {
+      const existing = seen.get(tid);
+      // Keep whichever is registered; else keep the one with the lower _id (older)
+      if (doc.registered && !existing.registered) {
+        seen.set(tid, doc);
+      }
+    }
+  }
+  // Build set of _ids to keep
+  const keepIds = new Set([...seen.values()].map(d => d._id.toString()));
+  const toDelete = allDocs.filter(d => !keepIds.has(d._id.toString()));
+  if (toDelete.length > 0) {
+    const deleteIds = toDelete.map(d => d._id);
+    await teamsCol.deleteMany({ _id: { $in: deleteIds } });
+    console.log(`🧹 Removed ${toDelete.length} duplicate team document(s). Teams now: ${await teamsCol.countDocuments()}`);
+  }
+
+  // ── STEP 3: Create unique index now that duplicates are gone ─────────────
+  try {
+    await teamsCol.createIndex({ teamId: 1 }, { unique: true });
+    console.log('✅ Unique index on teamId created');
+  } catch (e) {
+    console.warn('⚠️  Unique index error:', e.message);
+  }
+
+  // ── Seed teams if empty ─────────────────────────────────────────────────
+  const count = await teamsCol.countDocuments();
+  if (count === 0) {
+    const teams = [];
+    for (let i = 1; i <= 50; i++) {
+      teams.push({
+        teamId: i,
+        name: `Team ${i}`,
+        password: 'codehunt',
+        category: 'unset',
+        difficultyOverride: null,
+        members: [],
+        registered: false,
+        player1Name: '', player1Year: '',
+        player2Name: '', player2Year: ''
+      });
+    }
+    await teamsCol.insertMany(teams);
+    console.log('✅ Seeded 50 teams');
+  } else {
+    // Migration: ensure fields exist on older docs
+    await teamsCol.updateMany(
+      { registered: { $exists: false } },
+      { $set: { registered: false, player1Name: '', player1Year: '', player2Name: '', player2Year: '' } }
+    );
+  }
+
+  // ── Clean duplicate team_progress records on startup ────────────────────
+  const progressCol = db.collection('team_progress');
+  const allProgress = await progressCol.find({}).toArray();
+  const pgGrouped = {};
+  for (const doc of allProgress) {
+    const tid = doc.teamId;
+    if (!pgGrouped[tid]) pgGrouped[tid] = [];
+    pgGrouped[tid].push(doc);
+  }
+  let progressDupesRemoved = 0;
+  for (const docs of Object.values(pgGrouped)) {
+    if (docs.length <= 1) continue;
+    docs.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0) || (b.currentIndex || 0) - (a.currentIndex || 0));
+    const [, ...discard] = docs;
+    await progressCol.deleteMany({ _id: { $in: discard.map(d => d._id) } });
+    progressDupesRemoved += discard.length;
+  }
+  if (progressDupesRemoved > 0) console.log(`🧹 Removed ${progressDupesRemoved} duplicate team_progress record(s)`);
+
+  // Migration: add swaps fields to existing progress docs
+  await db.collection('team_progress').updateMany(
+    { swapsRemaining: { $exists: false } },
+    { $set: { swapsRemaining: 3, swapsUsedPerCheckpoint: {} } }
+  );
+
+  // TTL index for expired sessions
+  await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+  // Init game state if missing
+  const gs = db.collection('game_state');
+  if (!(await gs.findOne({ key: 'main' }))) {
+    await gs.insertOne({
+      key: 'main',
+      started: false,
+      startTime: null,
+      finalCodingStarted: false,
+      finalCodingStartTime: null
+    });
+    console.log('✅ Game state initialized');
+  }
+}
+
+// ─── MIDDLEWARE HELPERS ───────────────────────────────────────────────────────
+function auth(req, res, next) {
+  const token = req.headers['authorization'];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  getSession(token).then(session => {
+    if (!session) return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    req.user = { role: session.role, teamId: session.teamId, username: session.username };
+    next();
+  }).catch(() => res.status(500).json({ error: 'Auth error' }));
+}
+function adminOnly(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+function orgOrAdmin(req, res, next) {
+  if (req.user.role !== 'admin' && req.user.role !== 'organizer') return res.status(403).json({ error: 'Access denied' });
+  next();
+}
+
+// ─── AUTO CATEGORY FROM YEAR ──────────────────────────────────────────────────
+function deriveCategoryFromYears(y1, y2) {
+  const avgYear = ((parseInt(y1) || 1) + (parseInt(y2) || 1)) / 2;
+  return avgYear <= 2 ? 'junior' : 'senior';
+}
+
+// ─── GAME LOGIC ───────────────────────────────────────────────────────────────
+function seededShuffle(arr, seed) {
+  const a = [...arr]; let s = seed;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    const j = Math.abs(s) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const CODING_PAIRS = [];
+for (let a = 1; a <= 7; a++) {
+  for (let b = a + 3; b <= 7; b++) {
+    CODING_PAIRS.push([a, b]);
+  }
+}
+
+function generateBalancedSequences(teams) {
+  const TRACING_LABELS = ['T1','T2','T3','T4','T5','T6','T7'];
+  const stepLoad = {};
+  for (let i = 0; i < 9; i++) {
+    stepLoad[i] = {};
+    TRACING_LABELS.forEach(l => { stepLoad[i][l] = 0; });
+  }
+
+  return teams.map((team, idx) => {
+    const [c1Idx, c2Idx] = CODING_PAIRS[idx % CODING_PAIRS.length];
+
+    const sequence = new Array(10).fill(null);
+    sequence[9]     = { type: 'finalCoding', label: 'FC', displayName: 'Final Challenge' };
+    sequence[c1Idx] = { type: 'coding', label: 'C1', codingSlot: 1 };
+    sequence[c2Idx] = { type: 'coding', label: 'C2', codingSlot: 2 };
+
+    const tracingPositions = [];
+    for (let i = 0; i < 9; i++) { if (!sequence[i]) tracingPositions.push(i); }
+
+    const shuffledPositions = seededShuffle([...tracingPositions], team.teamId * 31337);
+    const usedLabels = new Set();
+
+    for (const pos of shuffledPositions) {
+      const candidates = TRACING_LABELS.filter(l => !usedLabels.has(l));
+      candidates.sort((a, b) => (stepLoad[pos][a] - stepLoad[pos][b]) || a.localeCompare(b));
+      const chosen = candidates[0];
+      usedLabels.add(chosen);
+      stepLoad[pos][chosen]++;
+      sequence[pos] = { type: 'tracing', label: chosen, tracingNum: parseInt(chosen.substring(1)) };
+    }
+
+    return sequence;
+  });
+}
+
+async function getTeamDifficulty(teamId) {
+  const team = await db.collection('teams').findOne({ teamId });
+  if (!team) return 'easy';
+  if (team.difficultyOverride) return team.difficultyOverride;
+
+  const y1 = parseInt(team.player1Year) || 1;
+  const y2 = parseInt(team.player2Year) || y1;
+  const avgYear = (y1 + y2) / 2;
+  let base;
+  if (avgYear <= 1.5)      base = 'easy';
+  else if (avgYear <= 2.5) base = 'medium';
+  else                     base = 'hard';
+
+  const allP = await db.collection('team_progress')
+    .find({}, { projection: { teamId: 1, totalPoints: 1 } }).toArray();
+
+  if (allP.length >= 3) {
+    allP.sort((a, b) => b.totalPoints - a.totalPoints);
+    const rank = allP.findIndex(p => p.teamId === teamId) + 1;
+    const pct  = rank / allP.length;
+    if (pct <= 0.2) {
+      if (base === 'easy') return 'medium';
+      if (base === 'medium') return 'hard';
+      return 'hard';
+    }
+    if (pct >= 0.8) {
+      if (base === 'hard') return 'medium';
+      if (base === 'medium') return 'easy';
+      return 'easy';
+    }
+  }
+
+  return base;
+}
+
+async function assignQuestion(teamId, type, isFinal = false) {
+  if (isFinal) {
+    // Final round: assign one of the 10 final questions by cycling teamId
+    const finalQs = await db.collection('questions')
+      .find({ type: 'finalCoding' })
+      .sort({ questionNumber: 1 })
+      .toArray();
+    if (finalQs.length === 0) return null;
+    const idx = (teamId - 1) % finalQs.length;
+    return finalQs[idx];
+  }
+  const difficulty = await getTeamDifficulty(teamId);
+  const order = difficulty === 'easy' ? ['easy','medium','hard']
+    : difficulty === 'medium' ? ['medium','easy','hard']
+    : ['hard','medium','easy'];
+  for (const d of order) {
+    const q = await db.collection('questions').findOne({
+      type, difficulty: d,
+      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+    });
+    if (q) {
+      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
+      return q;
+    }
+  }
+  return null;
+}
+
+// ─── AUTH ROUTES ──────────────────────────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (username === 'majen' && password === 'majen') {
+      const token = crypto.randomBytes(32).toString('hex');
+      await setSession(token, { role: 'admin', username: 'majen' });
+      return res.json({ token, role: 'admin' });
+    }
+
+    if (username === 'user' && password === 'user') {
+      const token = crypto.randomBytes(32).toString('hex');
+      await setSession(token, { role: 'organizer', username: 'user' });
+      return res.json({ token, role: 'organizer' });
+    }
+
+    const teamNum = parseInt(username);
+    if (isNaN(teamNum) || teamNum < 1 || teamNum > 50) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    let team = await db.collection('teams').findOne({ teamId: teamNum });
+
+    if (!team) {
+      try {
+        await db.collection('teams').insertOne({
+          teamId: teamNum, name: `Team ${teamNum}`, password: 'codehunt',
+          category: 'unset', difficultyOverride: null, members: [],
+          registered: false, player1Name: '', player1Year: '', player2Name: '', player2Year: ''
+        });
+      } catch (e) { /* unique constraint — already exists */ }
+      team = await db.collection('teams').findOne({ teamId: teamNum });
+    }
+
+    const correctPassword = team.password || 'codehunt';
+    if (password !== correctPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!team.registered) {
+      return res.json({ needsRegistration: true, teamId: teamNum });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    await setSession(token, { role: 'team', teamId: teamNum, username: team.name });
+    return res.json({ token, role: 'team', teamId: teamNum, teamName: team.name, category: team.category });
+
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/register', async (req, res) => {
+  try {
+    const { teamId, teamName, player1Name, player1Year, player2Name, player2Year } = req.body;
+
+    const teamNum = parseInt(teamId);
+    if (isNaN(teamNum) || teamNum < 1 || teamNum > 50) {
+      return res.status(400).json({ error: 'Invalid team number' });
+    }
+    if (!teamName || !teamName.trim()) return res.status(400).json({ error: 'Team name is required' });
+    if (!player1Name || !player1Name.trim()) return res.status(400).json({ error: 'Player 1 name is required' });
+    if (!player1Year) return res.status(400).json({ error: 'Player 1 year of study is required' });
+    if (!player2Name || !player2Name.trim()) return res.status(400).json({ error: 'Player 2 name is required' });
+    if (!player2Year) return res.status(400).json({ error: 'Player 2 year of study is required' });
+
+    const team = await db.collection('teams').findOne({ teamId: teamNum });
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+
+    // Auto-detect junior/senior from year of study
+    const category = deriveCategoryFromYears(player1Year, player2Year);
+
+    await db.collection('teams').updateOne(
+      { teamId: teamNum },
+      {
+        $set: {
+          name: teamName.trim(),
+          player1Name: player1Name.trim(), player1Year: player1Year.toString(),
+          player2Name: player2Name.trim(), player2Year: player2Year.toString(),
+          members: [player1Name.trim(), player2Name.trim()],
+          category,
+          registered: true,
+          registeredAt: new Date()
+        }
+      }
+    );
+
+    console.log(`✅ Team ${teamNum} registered as "${teamName.trim()}" (${category})`);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    await setSession(token, { role: 'team', teamId: teamNum, username: teamName.trim() });
+    return res.json({ token, role: 'team', teamId: teamNum, teamName: teamName.trim(), category });
+
+  } catch (err) {
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+});
+
+app.post('/api/logout', auth, async (req, res) => {
+  await deleteSession(req.headers['authorization']);
+  res.json({ success: true });
+});
+
+app.get('/api/me', auth, (req, res) => {
+  res.json({ role: req.user.role, teamId: req.user.teamId, username: req.user.username });
+});
+
+// ─── GAME STATE ───────────────────────────────────────────────────────────────
+app.get('/api/game-state', async (req, res) => {
+  res.json(await db.collection('game_state').findOne({ key: 'main' }));
+});
+
+// ─── LEADERBOARD ──────────────────────────────────────────────────────────────
+app.get('/api/leaderboard', async (req, res) => {
+  const allProgress = await db.collection('team_progress').find({}).toArray();
+  const teams = await db.collection('teams').find({}).toArray();
+
+  // Deduplicate teams by teamId (keep registered one)
+  const tm = {};
+  for (const t of teams) {
+    if (!tm[t.teamId] || t.registered) tm[t.teamId] = t;
+  }
+
+  // Deduplicate team_progress by teamId — keep the one with the most points / furthest along
+  const pm = {};
+  for (const p of allProgress) {
+    const tid = p.teamId;
+    if (!pm[tid]) {
+      pm[tid] = p;
+    } else {
+      const existing = pm[tid];
+      const existingPoints = existing.totalPoints || 0;
+      const newPoints = p.totalPoints || 0;
+      // Keep whichever has more points; if tied, keep the one further along
+      if (newPoints > existingPoints || (newPoints === existingPoints && (p.currentIndex || 0) > (existing.currentIndex || 0))) {
+        pm[tid] = p;
+      }
+    }
+  }
+
+  const board = Object.values(pm).map(p => ({
+    teamId: p.teamId,
+    name: tm[p.teamId]?.name || `Team ${p.teamId}`,
+    category: tm[p.teamId]?.category || 'unset',
+    totalPoints: p.totalPoints || 0,
+    completedCount: (p.completedCheckpoints || []).length,
+    currentIndex: p.currentIndex || 0
+  })).sort((a, b) => b.totalPoints - a.totalPoints || b.completedCount - a.completedCount);
+  res.json(board);
+});
+
+// ─── ADMIN: Questions ─────────────────────────────────────────────────────────
+app.get('/api/admin/questions', auth, adminOnly, async (req, res) => {
+  res.json(await db.collection('questions').find({}).sort({ type: 1, difficulty: 1 }).toArray());
+});
+
+app.post('/api/admin/questions', auth, adminOnly, async (req, res) => {
+  const { questionNumber, answer, difficulty, type } = req.body;
+  if (!answer || !type) return res.status(400).json({ error: 'Missing fields' });
+
+  // For finalCoding, difficulty is not required
+  if (type !== 'finalCoding' && !difficulty) return res.status(400).json({ error: 'Difficulty required for tracing/coding questions' });
+
+  // Auto-generate volunteer code
+  let code = '';
+  if (type === 'finalCoding') {
+    const existingCount = await db.collection('questions').countDocuments({ type: 'finalCoding' });
+    code = `F${existingCount + 1}`;
+  } else {
+    const diffLetter = difficulty === 'easy' ? 'E' : difficulty === 'medium' ? 'M' : 'H';
+    const typeLetter = type === 'tracing' ? 'T' : 'C';
+    const existingCount = await db.collection('questions').countDocuments({ difficulty, type });
+    code = `${diffLetter}${typeLetter}${existingCount + 1}`;
+  }
+
+  const result = await db.collection('questions').insertOne({
+    questionNumber: questionNumber ? questionNumber.toString() : null,
+    answer: answer.trim(),
+    difficulty: type === 'finalCoding' ? 'final' : difficulty,
+    type,
+    code,
+    usedBy: []
+  });
+  res.json({ success: true, id: result.insertedId, code });
+});
+
+app.put('/api/admin/questions/:id', auth, adminOnly, async (req, res) => {
+  const { questionNumber, answer, difficulty, type } = req.body;
+  await db.collection('questions').updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { questionNumber: questionNumber?.toString(), answer: answer?.trim(), difficulty, type } }
+  );
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/questions/:id', auth, adminOnly, async (req, res) => {
+  await db.collection('questions').deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json({ success: true });
+});
+
+// ─── ADMIN: Checkpoints ───────────────────────────────────────────────────────
+app.get('/api/admin/checkpoints', auth, adminOnly, async (req, res) => {
+  res.json(await db.collection('checkpoints').find({}).toArray());
+});
+
+app.post('/api/admin/checkpoints', auth, adminOnly, async (req, res) => {
+  const { label, name, locationHint } = req.body;
+  const existing = await db.collection('checkpoints').findOne({ label });
+  if (existing) await db.collection('checkpoints').updateOne({ label }, { $set: { name, locationHint } });
+  else await db.collection('checkpoints').insertOne({ label, name, locationHint });
+  res.json({ success: true });
+});
+
+// ─── ADMIN: Teams ─────────────────────────────────────────────────────────────
+app.get('/api/admin/teams', auth, adminOnly, async (req, res) => {
+  const teams = await db.collection('teams').find({}).sort({ teamId: 1 }).toArray();
+  // Deduplicate: keep one per teamId
+  const seen = new Set();
+  const unique = teams.filter(t => {
+    if (seen.has(t.teamId)) return false;
+    seen.add(t.teamId);
+    return true;
+  });
+  const progress = await db.collection('team_progress').find({}).toArray();
+  const pm = {}; progress.forEach(p => pm[p.teamId] = p);
+  res.json(unique.map(t => ({ ...t, progress: pm[t.teamId] || null })));
+});
+
+app.put('/api/admin/teams/:teamId', auth, adminOnly, async (req, res) => {
+  const { difficultyOverride, name } = req.body;
+  const upd = {};
+  if (difficultyOverride !== undefined) upd.difficultyOverride = difficultyOverride || null;
+  if (name !== undefined) upd.name = name;
+  await db.collection('teams').updateOne({ teamId: parseInt(req.params.teamId) }, { $set: upd });
+  res.json({ success: true });
+});
+
+app.post('/api/admin/reset-registration/:teamId', auth, adminOnly, async (req, res) => {
+  const teamId = parseInt(req.params.teamId);
+  await db.collection('teams').updateOne(
+    { teamId },
+    { $set: { registered: false, name: `Team ${teamId}`, category: 'unset', player1Name: '', player1Year: '', player2Name: '', player2Year: '', members: [] } }
+  );
+  res.json({ success: true });
+});
+
+// ─── ADMIN: Fix duplicate team_progress records ───────────────────────────────
+app.post('/api/admin/fix-progress', auth, adminOnly, async (req, res) => {
+  const progressCol = db.collection('team_progress');
+  const allDocs = await progressCol.find({}).toArray();
+
+  // Group by teamId
+  const grouped = {};
+  for (const doc of allDocs) {
+    const tid = doc.teamId;
+    if (!grouped[tid]) grouped[tid] = [];
+    grouped[tid].push(doc);
+  }
+
+  let totalRemoved = 0;
+  for (const [tid, docs] of Object.entries(grouped)) {
+    if (docs.length <= 1) continue;
+
+    // Keep the best doc: highest points, then furthest index
+    docs.sort((a, b) =>
+      (b.totalPoints || 0) - (a.totalPoints || 0) ||
+      (b.currentIndex || 0) - (a.currentIndex || 0)
+    );
+    const [keep, ...discard] = docs;
+    const discardIds = discard.map(d => d._id);
+    await progressCol.deleteMany({ _id: { $in: discardIds } });
+    totalRemoved += discardIds.length;
+    console.log(`🧹 Team ${tid}: kept _id=${keep._id}, removed ${discardIds.length} duplicate(s)`);
+  }
+
+  res.json({ success: true, message: `Removed ${totalRemoved} duplicate progress record(s)` });
+});
+
+// ADMIN: Force-fix duplicate teams (callable from admin panel)
+app.post('/api/admin/fix-teams', auth, adminOnly, async (req, res) => {
+  const teamsCol = db.collection('teams');
+  const allDocs = await teamsCol.find({}).toArray();
+  const seen = new Map();
+  for (const doc of allDocs) {
+    const tid = doc.teamId;
+    if (!seen.has(tid)) { seen.set(tid, doc); }
+    else {
+      const existing = seen.get(tid);
+      if (doc.registered && !existing.registered) seen.set(tid, doc);
+    }
+  }
+  const keepIds = new Set([...seen.values()].map(d => d._id.toString()));
+  const toDelete = allDocs.filter(d => !keepIds.has(d._id.toString()));
+  if (toDelete.length > 0) {
+    await teamsCol.deleteMany({ _id: { $in: toDelete.map(d => d._id) } });
+  }
+  // Re-create unique index
+  try { await teamsCol.dropIndex('teamId_1'); } catch(e){}
+  try { await teamsCol.createIndex({ teamId: 1 }, { unique: true }); } catch(e){}
+  const finalCount = await teamsCol.countDocuments();
+  res.json({ success: true, removed: toDelete.length, totalNow: finalCount });
+});
+
+// ─── ADMIN: Progress ──────────────────────────────────────────────────────────
+app.get('/api/admin/progress', auth, adminOnly, async (req, res) => {
+  const allProgress = await db.collection('team_progress').find({}).toArray();
+  const teams = await db.collection('teams').find({}).toArray();
+  const tm = {};
+  for (const t of teams) {
+    if (!tm[t.teamId] || t.registered) tm[t.teamId] = t;
+  }
+  // Deduplicate progress by teamId before returning
+  const pm = {};
+  for (const p of allProgress) {
+    const tid = p.teamId;
+    if (!pm[tid] || (p.totalPoints || 0) > (pm[tid].totalPoints || 0)) pm[tid] = p;
+  }
+  res.json(Object.values(pm).map(p => ({ ...p, teamName: tm[p.teamId]?.name || `Team ${p.teamId}` })));
+});
+
+// ─── ADMIN: Event Control ─────────────────────────────────────────────────────
+app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
+  const gs = await db.collection('game_state').findOne({ key: 'main' });
+  if (gs.started) return res.json({ success: true, message: 'Already started' });
+
+  // Only use registered teams (deduplicated)
+  const allTeams = await db.collection('teams').find({}).sort({ teamId: 1 }).toArray();
+  const seen = new Set();
+  const teams = allTeams.filter(t => { if (seen.has(t.teamId)) return false; seen.add(t.teamId); return true; });
+  const now = new Date();
+  const sequences = generateBalancedSequences(teams);
+
+  for (let i = 0; i < teams.length; i++) {
+    const team = teams[i];
+    if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
+      await db.collection('team_progress').insertOne({
+        teamId: team.teamId,
+        sequence: sequences[i],
+        currentIndex: 0,
+        checkpoints: [],
+        completedCheckpoints: [],
+        totalPoints: 0,
+        startTime: now,
+        deferredCoding: [],
+        swapsRemaining: 3,
+        swapsUsedPerCheckpoint: {}
+      });
+    }
+  }
+  await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: true, startTime: now } });
+  res.json({ success: true });
+});
+
+app.post('/api/admin/reset-event', auth, adminOnly, async (req, res) => {
+  await db.collection('team_progress').deleteMany({});
+  await db.collection('questions').updateMany({}, { $set: { usedBy: [] } });
+  await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: false, startTime: null, finalCodingStarted: false, finalCodingStartTime: null } });
+  res.json({ success: true });
+});
+
+app.post('/api/admin/final-coding-start', auth, adminOnly, async (req, res) => {
+  await db.collection('game_state').updateOne({ key: 'main' }, { $set: { finalCodingStarted: true, finalCodingStartTime: new Date() } });
+  res.json({ success: true });
+});
+
+// ─── TEAM: Game State ─────────────────────────────────────────────────────────
+app.get('/api/team/state', auth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
+  const teamId = req.user.teamId;
+  const gs = await db.collection('game_state').findOne({ key: 'main' });
+  if (!gs.started) return res.json({ gameStarted: false });
+  let progress = await db.collection('team_progress').findOne({ teamId });
+  if (!progress) return res.json({ gameStarted: true, noProgress: true });
+  const idx = progress.currentIndex;
+  if (idx >= 10) return res.json({ gameStarted: true, finished: true, totalPoints: progress.totalPoints, completedCheckpoints: progress.completedCheckpoints });
+
+  const seqEntry = progress.sequence[idx];
+  let cpData = progress.checkpoints.find(c => c.index === idx);
+  if (!cpData) {
+    let q = null;
+    if (seqEntry.type === 'tracing') q = await assignQuestion(teamId, 'tracing');
+    else if (seqEntry.type === 'coding') q = await assignQuestion(teamId, 'coding');
+    else if (seqEntry.type === 'finalCoding') q = await assignQuestion(teamId, 'coding', true);
+    const cpMeta = await db.collection('checkpoints').findOne({ label: seqEntry.label });
+    cpData = {
+      index: idx, type: seqEntry.type, label: seqEntry.label,
+      locationName: cpMeta?.name || seqEntry.label,
+      locationHint: cpMeta?.locationHint || '',
+      questionId: q?._id?.toString() || null,
+      questionCode: q?.code || null,
+      questionNumber: q?.questionNumber || null,
+      questionAnswer: q?.answer || null,
+      status: 'pending', timerStartedAt: null, timerPausedAt: null,
+      timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
+    };
+    await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: cpData } });
+    progress = await db.collection('team_progress').findOne({ teamId });
+    cpData = progress.checkpoints.find(c => c.index === idx);
+  }
+
+  let timerElapsed = cpData.timerUsed || 0;
+  if (cpData.timerStartedAt && !cpData.timerPausedAt)
+    timerElapsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+
+  res.json({
+    gameStarted: true, teamId, currentIndex: idx, totalCheckpoints: 10, seqEntry,
+    cpData: { ...cpData, timerElapsed: Math.floor(timerElapsed) },
+    completedCheckpoints: progress.completedCheckpoints, totalPoints: progress.totalPoints,
+    sequence: progress.sequence.map((s, i) => ({
+      ...s, index: i,
+      status: (progress.completedCheckpoints || []).includes(i) ? 'completed' : i === idx ? 'current' : i < idx ? 'skipped' : 'pending'
+    })),
+    deferredCoding: progress.deferredCoding || [],
+    swapsRemaining: progress.swapsRemaining ?? 3,
+    swapsUsedAtCurrentCheckpoint: (progress.swapsUsedPerCheckpoint || {})[idx] || 0,
+    finalCodingStarted: gs.finalCodingStarted, finalCodingStartTime: gs.finalCodingStartTime
+  });
+});
+
+// ─── TEAM: Submit ─────────────────────────────────────────────────────────────
+app.post('/api/team/submit', auth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
+  const teamId = req.user.teamId;
+  const { answer } = req.body;
+  const progress = await db.collection('team_progress').findOne({ teamId });
+  if (!progress) return res.status(400).json({ error: 'No progress' });
+  const idx = progress.currentIndex;
+  const cpData = progress.checkpoints.find(c => c.index === idx);
+  if (!cpData) return res.status(400).json({ error: 'No active checkpoint' });
+  const gs = await db.collection('game_state').findOne({ key: 'main' });
+
+  if (cpData.type === 'tracing') {
+    const correct = answer.trim().toLowerCase() === (cpData.questionAnswer || '').trim().toLowerCase();
+    if (!correct) return res.json({ correct: false, message: 'Wrong answer, try again!' });
+    const timeTaken = (Date.now() - new Date(gs.startTime).getTime()) / 1000;
+    const bonus = Math.max(0, Math.floor((1 - Math.min(timeTaken, 7200) / 7200) * 50));
+    const points = 100 + bonus;
+    await db.collection('team_progress').updateOne(
+      { teamId, 'checkpoints.index': idx },
+      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $push: { completedCheckpoints: idx }, $inc: { totalPoints: points } }
+    );
+    await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 } });
+    return res.json({ correct: true, message: `Correct! +${points} points`, points });
+  }
+
+  if (cpData.type === 'coding' || cpData.type === 'finalCoding') {
+    let timerElapsed = cpData.timerUsed || 0;
+    if (cpData.timerStartedAt && !cpData.timerPausedAt)
+      timerElapsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+    const timerExpired = timerElapsed >= 600;
+    await db.collection('team_progress').updateOne(
+      { teamId, 'checkpoints.index': idx },
+      { $set: { 'checkpoints.$.submittedAnswer': answer, 'checkpoints.$.submittedAt': new Date(), 'checkpoints.$.timerExpired': timerExpired, 'checkpoints.$.status': 'submitted' } }
+    );
+    return res.json({ success: true, message: 'Answer submitted! Waiting for organizer to confirm.', timerExpired });
+  }
+  res.json({ success: false });
+});
+
+// ─── TEAM: Defer Coding ───────────────────────────────────────────────────────
+app.post('/api/team/defer-coding', auth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
+  const teamId = req.user.teamId;
+  const progress = await db.collection('team_progress').findOne({ teamId });
+  if (!progress) return res.status(400).json({ error: 'No progress' });
+  const idx = progress.currentIndex;
+  const seqEntry = progress.sequence[idx];
+  if (seqEntry.type !== 'coding') return res.status(400).json({ error: 'Can only defer non-final coding rounds' });
+  await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': idx }, { $set: { 'checkpoints.$.status': 'deferred' } });
+  await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 }, $push: { deferredCoding: { originalIndex: idx, label: seqEntry.label, deferredAt: new Date(), completed: false } } });
+  res.json({ success: true, message: 'Coding round deferred. Complete it before the final checkpoint!' });
+});
+
+app.post('/api/team/activate-deferred', auth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
+  const { originalIndex } = req.body;
+  const teamId = req.user.teamId;
+  const progress = await db.collection('team_progress').findOne({ teamId });
+  if (!progress) return res.status(400).json({ error: 'No progress' });
+  const deferred = progress.deferredCoding.find(d => d.originalIndex === originalIndex && !d.completed);
+  if (!deferred) return res.status(400).json({ error: 'Deferred round not found' });
+  const cpData = progress.checkpoints.find(c => c.index === originalIndex);
+  if (cpData) {
+    await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': originalIndex }, { $set: { 'checkpoints.$.status': 'pending', 'checkpoints.$.timerRequested': true } });
+  }
+  res.json({ success: true, message: 'Activated! Ask organizer to start your timer.' });
+});
+
+// ─── ORGANIZER ────────────────────────────────────────────────────────────────
+app.get('/api/organizer/coding-teams', auth, orgOrAdmin, async (req, res) => {
+  const allProgress = await db.collection('team_progress').find({}).toArray();
+  const teams = await db.collection('teams').find({}).toArray();
+  const tm = {};
+  for (const t of teams) { if (!tm[t.teamId] || t.registered) tm[t.teamId] = t; }
+  const result = [];
+  for (const p of allProgress) {
+    const idx = p.currentIndex;
+    const seq = p.sequence?.[idx];
+    if (!seq) continue;
+    const cpData = p.checkpoints.find(c => c.index === idx);
+    if (seq.type === 'coding') result.push({ teamId: p.teamId, name: tm[p.teamId]?.name || `Team ${p.teamId}`, currentIndex: idx, seq, cpData, isDeferred: false, deferred: p.deferredCoding || [] });
+    for (const def of (p.deferredCoding || [])) {
+      if (def.completed) continue;
+      const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
+      if (dc) result.push({ teamId: p.teamId, name: tm[p.teamId]?.name || `Team ${p.teamId}`, currentIndex: def.originalIndex, seq: p.sequence[def.originalIndex], cpData: dc, isDeferred: true, deferred: p.deferredCoding || [] });
+    }
+  }
+  res.json(result);
+});
+
+app.post('/api/organizer/start-timer', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, checkpointIndex } = req.body;
+  await db.collection('team_progress').updateOne(
+    { teamId: parseInt(teamId), 'checkpoints.index': parseInt(checkpointIndex) },
+    { $set: { 'checkpoints.$.timerStartedAt': new Date(), 'checkpoints.$.timerPausedAt': null, 'checkpoints.$.timerUsed': 0, 'checkpoints.$.status': 'in-progress' } }
+  );
+  res.json({ success: true });
+});
+
+app.post('/api/organizer/timer-control', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, checkpointIndex, action } = req.body;
+  const idx = parseInt(checkpointIndex);
+  const progress = await db.collection('team_progress').findOne({ teamId: parseInt(teamId) });
+  const cpData = progress?.checkpoints.find(c => c.index === idx);
+  if (!cpData) return res.status(400).json({ error: 'Not found' });
+  if (action === 'pause') {
+    const elapsed = (cpData.timerUsed || 0) + (cpData.timerStartedAt && !cpData.timerPausedAt ? (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000 : 0);
+    await db.collection('team_progress').updateOne({ teamId: parseInt(teamId), 'checkpoints.index': idx }, { $set: { 'checkpoints.$.timerPausedAt': new Date(), 'checkpoints.$.timerUsed': elapsed } });
+  } else {
+    await db.collection('team_progress').updateOne({ teamId: parseInt(teamId), 'checkpoints.index': idx }, { $set: { 'checkpoints.$.timerStartedAt': new Date(), 'checkpoints.$.timerPausedAt': null } });
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/organizer/mark-status', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, checkpointIndex, status } = req.body;
+  const idx = parseInt(checkpointIndex); const teamIdInt = parseInt(teamId);
+  const progress = await db.collection('team_progress').findOne({ teamId: teamIdInt });
+  const cpData = progress?.checkpoints.find(c => c.index === idx);
+  if (!cpData) return res.status(400).json({ error: 'Not found' });
+  if (status === 'completed') {
+    const isDeferred = (progress.deferredCoding || []).find(d => d.originalIndex === idx && !d.completed);
+    let points = 200;
+    if (cpData.timerExpired) points = 120;
+    if (isDeferred) points = 80;
+    await db.collection('team_progress').updateOne(
+      { teamId: teamIdInt, 'checkpoints.index': idx },
+      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $inc: { totalPoints: points } }
+    );
+    if (progress.currentIndex === idx) {
+      await db.collection('team_progress').updateOne({ teamId: teamIdInt }, { $set: { currentIndex: idx + 1 }, $push: { completedCheckpoints: idx } });
+    } else {
+      await db.collection('team_progress').updateOne({ teamId: teamIdInt, 'deferredCoding.originalIndex': idx }, { $set: { 'deferredCoding.$.completed': true } });
+      await db.collection('team_progress').updateOne({ teamId: teamIdInt }, { $push: { completedCheckpoints: idx } });
+    }
+    return res.json({ success: true, points });
+  }
+  await db.collection('team_progress').updateOne({ teamId: teamIdInt, 'checkpoints.index': idx }, { $set: { 'checkpoints.$.status': status } });
+  res.json({ success: true });
+});
+
+app.post('/api/organizer/mark-final', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, status } = req.body;
+  const teamIdInt = parseInt(teamId);
+  const progress = await db.collection('team_progress').findOne({ teamId: teamIdInt });
+  const cpData = progress?.checkpoints.find(c => c.index === 9);
+  if (!cpData) return res.status(400).json({ error: 'Final checkpoint not yet started' });
+  if (status === 'completed') {
+    const gs = await db.collection('game_state').findOne({ key: 'main' });
+    let points = 300;
+    if (gs.finalCodingStartTime && (Date.now() - new Date(gs.finalCodingStartTime).getTime()) / 1000 > 600) points = 180;
+    await db.collection('team_progress').updateOne(
+      { teamId: teamIdInt, 'checkpoints.index': 9 },
+      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $inc: { totalPoints: points } }
+    );
+    await db.collection('team_progress').updateOne({ teamId: teamIdInt }, { $set: { currentIndex: 10 }, $push: { completedCheckpoints: 9 } });
+    return res.json({ success: true, points });
+  }
+  await db.collection('team_progress').updateOne({ teamId: teamIdInt, 'checkpoints.index': 9 }, { $set: { 'checkpoints.$.status': status } });
+  res.json({ success: true });
+});
+
+// ─── TEAM: Swap / Regenerate Question ────────────────────────────────────────
+app.post('/api/team/swap-question', auth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
+  const teamId = req.user.teamId;
+  const progress = await db.collection('team_progress').findOne({ teamId });
+  if (!progress) return res.status(400).json({ error: 'No progress found' });
+
+  const idx = progress.currentIndex;
+  const seqEntry = progress.sequence[idx];
+
+  // Final round cannot be swapped
+  if (seqEntry.type === 'finalCoding') {
+    return res.status(400).json({ error: 'Cannot swap the final challenge question' });
+  }
+
+  // Check global swaps remaining
+  const swapsRemaining = progress.swapsRemaining ?? 3;
+  if (swapsRemaining <= 0) {
+    return res.status(400).json({ error: 'No swaps remaining! You have used all 3 swaps.' });
+  }
+
+  // Check per-checkpoint swap limit (max 1 per checkpoint)
+  const swapsUsedHere = (progress.swapsUsedPerCheckpoint || {})[idx] || 0;
+  if (swapsUsedHere >= 1) {
+    return res.status(400).json({ error: 'You have already used your swap for this checkpoint.' });
+  }
+
+  // Get current question to exclude it
+  const cpData = progress.checkpoints.find(c => c.index === idx);
+  const currentQuestionId = cpData?.questionId;
+
+  // Assign a new question (different from current)
+  const difficulty = await getTeamDifficulty(teamId);
+  const order = difficulty === 'easy' ? ['easy','medium','hard']
+    : difficulty === 'medium' ? ['medium','easy','hard']
+    : ['hard','medium','easy'];
+
+  let newQ = null;
+  for (const d of order) {
+    const q = await db.collection('questions').findOne({
+      type: seqEntry.type, difficulty: d,
+      usedBy: { $not: { $elemMatch: { $eq: teamId } } },
+      ...(currentQuestionId ? { _id: { $ne: new ObjectId(currentQuestionId) } } : {})
+    });
+    if (q) { newQ = q; break; }
+  }
+
+  if (!newQ) {
+    return res.status(400).json({ error: 'No alternative question available for swap.' });
+  }
+
+  // Mark new question as used by this team
+  await db.collection('questions').updateOne({ _id: newQ._id }, { $push: { usedBy: teamId } });
+
+  // Release old question from usedBy (if it existed)
+  if (currentQuestionId) {
+    try {
+      await db.collection('questions').updateOne(
+        { _id: new ObjectId(currentQuestionId) },
+        { $pull: { usedBy: teamId } }
+      );
+    } catch(e) { /* ignore */ }
+  }
+
+  // Update checkpoint data with new question
+  const swapKey = `swapsUsedPerCheckpoint.${idx}`;
+  if (cpData) {
+    await db.collection('team_progress').updateOne(
+      { teamId, 'checkpoints.index': idx },
+      {
+        $set: {
+          'checkpoints.$.questionId': newQ._id.toString(),
+          'checkpoints.$.questionCode': newQ.code || null,
+          'checkpoints.$.questionNumber': newQ.questionNumber || null,
+          'checkpoints.$.questionAnswer': newQ.answer || null,
+        }
+      }
+    );
+  } else {
+    // cpData doesn't exist yet — create it
+    const cpMeta = await db.collection('checkpoints').findOne({ label: seqEntry.label });
+    const newCp = {
+      index: idx, type: seqEntry.type, label: seqEntry.label,
+      locationName: cpMeta?.name || seqEntry.label,
+      locationHint: cpMeta?.locationHint || '',
+      questionId: newQ._id.toString(),
+      questionCode: newQ.code || null,
+      questionNumber: newQ.questionNumber || null,
+      questionAnswer: newQ.answer || null,
+      status: 'pending', timerStartedAt: null, timerPausedAt: null,
+      timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
+    };
+    await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: newCp } });
+  }
+
+  // Deduct swap
+  await db.collection('team_progress').updateOne(
+    { teamId },
+    {
+      $inc: { swapsRemaining: -1, [swapKey]: 1 }
+    }
+  );
+
+  const updatedProgress = await db.collection('team_progress').findOne({ teamId });
+  res.json({
+    success: true,
+    message: `Question swapped! New code: ${newQ.code}`,
+    newCode: newQ.code,
+    swapsRemaining: updatedProgress.swapsRemaining
+  });
+});
+
+// ─── ADMIN: Grant extra swaps to a team ───────────────────────────────────────
+app.post('/api/admin/teams/:teamId/add-swaps', auth, adminOnly, async (req, res) => {
+  const teamId = parseInt(req.params.teamId);
+  const { amount = 1 } = req.body;
+  const n = parseInt(amount);
+  if (isNaN(n) || n < 1 || n > 10) return res.status(400).json({ error: 'Amount must be 1–10' });
+
+  const result = await db.collection('team_progress').updateOne(
+    { teamId },
+    { $inc: { swapsRemaining: n } }
+  );
+  if (result.matchedCount === 0) return res.status(404).json({ error: 'Team progress not found. Has event started?' });
+
+  const updated = await db.collection('team_progress').findOne({ teamId });
+  res.json({ success: true, swapsRemaining: updated.swapsRemaining });
+});
+
+// ─── START SERVER ─────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`🌐 CodeHunt 2k26 server started on port ${PORT}`);
+  console.log('🔌 Connecting to MongoDB...');
+  tryConnect();
+});
