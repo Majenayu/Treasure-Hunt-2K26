@@ -2,9 +2,9 @@
   "name": "codehunt",
   "version": "1.0.0",
   "description": "CodeHunt Treasure Hunt Event Application",
-  "main": "server.js",
+  "main": "Server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node Server.js"
   },
   "engines": {
     "node": ">=18.0.0"
