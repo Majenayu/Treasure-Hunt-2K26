@@ -1353,6 +1353,12 @@ html, body { height: 100%; height: 100dvh; overflow: hidden; }
           <option value="3">Year 3</option>
           <option value="4">Year 4</option>
         </select>
+        <label class="inp-lbl">College</label>
+        <select class="sel-sm" id="regP1College">
+          <option value="">-- Select College --</option>
+          <option value="VVCE">VVCE</option>
+          <option value="Other">Other College</option>
+        </select>
       </div>
       <div class="player-card">
         <div class="player-card-hdr"><i class="fas fa-user"></i> PLAYER 2</div>
@@ -1365,6 +1371,12 @@ html, body { height: 100%; height: 100dvh; overflow: hidden; }
           <option value="2">Year 2</option>
           <option value="3">Year 3</option>
           <option value="4">Year 4</option>
+        </select>
+        <label class="inp-lbl">College</label>
+        <select class="sel-sm" id="regP2College">
+          <option value="">-- Select College --</option>
+          <option value="VVCE">VVCE</option>
+          <option value="Other">Other College</option>
         </select>
       </div>
     </div>
@@ -1515,7 +1527,7 @@ function showRegisterPage(teamId) {
   document.getElementById('registerPage').classList.remove('hidden');
   document.getElementById('regBadge').textContent = `Team #${teamId}`;
   ['regTeamName','regP1Name','regP2Name'].forEach(id => document.getElementById(id).value = '');
-  ['regP1Year','regP2Year'].forEach(id => document.getElementById(id).value = '');
+  ['regP1Year','regP2Year','regP1College','regP2College'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('regErr').textContent = '';
   document.getElementById('categoryPreview').textContent = '🏷️ Category will be auto-detected from year of study';
   setTimeout(() => document.getElementById('regTeamName').focus(), 100);
@@ -1528,20 +1540,24 @@ async function doRegister() {
   const teamName = document.getElementById('regTeamName').value.trim();
   const p1Name   = document.getElementById('regP1Name').value.trim();
   const p1Year   = document.getElementById('regP1Year').value;
+  const p1College = document.getElementById('regP1College').value;
   const p2Name   = document.getElementById('regP2Name').value.trim();
   const p2Year   = document.getElementById('regP2Year').value;
+  const p2College = document.getElementById('regP2College').value;
   if (!teamName)  { errEl.textContent = '⚠️ Please enter a team name.'; return; }
   if (!p1Name)    { errEl.textContent = '⚠️ Please enter Player 1\'s name.'; return; }
   if (!p1Year)    { errEl.textContent = '⚠️ Please select Player 1\'s year of study.'; return; }
+  if (!p1College) { errEl.textContent = '⚠️ Please select Player 1\'s college.'; return; }
   if (!p2Name)    { errEl.textContent = '⚠️ Please enter Player 2\'s name.'; return; }
   if (!p2Year)    { errEl.textContent = '⚠️ Please select Player 2\'s year of study.'; return; }
+  if (!p2College) { errEl.textContent = '⚠️ Please select Player 2\'s college.'; return; }
   if (!pendingTeamId) { errEl.textContent = '⚠️ Session expired. Please go back and log in again.'; return; }
   regBtn.disabled = true; regBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering…';
   try {
     const d = await api('POST', '/api/register', {
       teamId: pendingTeamId, teamName,
-      player1Name: p1Name, player1Year: p1Year,
-      player2Name: p2Name, player2Year: p2Year
+      player1Name: p1Name, player1Year: p1Year, player1College: p1College,
+      player2Name: p2Name, player2Year: p2Year, player2College: p2College
     });
     pendingTeamId = null;
     finishLogin(d);
@@ -1763,6 +1779,27 @@ async function renderTeamDashboard(el, gs, st) {
   const state = st || (await api('GET', '/api/team/state'));
   _cachedTeamState = state;
   if (state.noProgress) { el.innerHTML = `<div class="card"><p style="color:var(--muted)">Your team data is not ready yet. Please wait.</p></div>`; return; }
+  
+  // Check if final checkpoint is locked
+  if (state.finalLocked) {
+    const completedFirst9 = (state.completedCheckpoints || []).filter(i => i < 9).length;
+    const remaining = 9 - completedFirst9;
+    el.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px;border-color:rgba(245,158,11,.5);background:linear-gradient(135deg,rgba(40,25,5,.9),rgba(20,12,2,.95))">
+        <div style="font-size:3rem;margin-bottom:12px">🔒</div>
+        <div class="card-title" style="justify-content:center;color:var(--yellow);font-size:1.2rem">Final Checkpoint Locked</div>
+        <p style="color:var(--muted);margin-bottom:16px">${state.message || 'Complete all remaining checkpoints first!'}</p>
+        <div style="font-family:'Orbitron',sans-serif;font-size:2.5rem;font-weight:900;color:var(--yellow);text-shadow:0 0 30px rgba(245,158,11,0.5)">${remaining}</div>
+        <div style="color:var(--muted);font-size:.85rem;margin-top:4px;letter-spacing:2px">CHECKPOINTS REMAINING</div>
+        <div style="margin-top:24px;padding:16px;background:rgba(245,158,11,.1);border-radius:12px;border:1px solid rgba(245,158,11,.3)">
+          <div style="color:var(--text);font-size:.9rem;margin-bottom:8px">✅ Completed: ${completedFirst9} / 9</div>
+          <div style="color:var(--text);font-size:.9rem">📊 Total Points: ${state.totalPoints || 0}</div>
+        </div>
+      </div>`;
+    document.getElementById('headerPoints').textContent = `${state.totalPoints || 0} pts`;
+    return;
+  }
+  
   if (state.finished) {
     el.innerHTML = `
       <div class="card" style="text-align:center;padding:48px;border-color:rgba(16,185,129,.4);">
@@ -1779,7 +1816,7 @@ async function renderTeamDashboard(el, gs, st) {
   const { cpData, seqEntry, completedCheckpoints, sequence, deferredCoding } = state;
   const swapsRemaining = state.swapsRemaining ?? 3;
   const swapsUsedHere  = state.swapsUsedAtCurrentCheckpoint ?? 0;
-  const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding';
+  const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding' && seqEntry?.type !== 'activity';
   const done = (completedCheckpoints||[]).length;
   const pct  = Math.round((done/10)*100);
   const timerElapsed   = cpData?.timerElapsed || 0;
@@ -1789,10 +1826,10 @@ async function renderTeamDashboard(el, gs, st) {
 
   const locationName = cpData?.locationName || seqEntry?.label || '—';
   const locationHint = cpData?.locationHint || '';
-  const typeIcon  = seqEntry?.type==='tracing' ? '🔍' : seqEntry?.type==='coding' ? '💻' : '🏁';
-  const typeLabel = seqEntry?.type==='tracing' ? 'Tracing Checkpoint' : seqEntry?.type==='coding' ? 'Coding Round' : 'Final Challenge';
-  const borderCol = seqEntry?.type==='coding' ? 'rgba(178,75,255,.5)' : seqEntry?.type==='finalCoding' ? 'rgba(245,158,11,.5)' : 'rgba(0,229,255,.4)';
-  const bgGrad    = seqEntry?.type==='coding' ? 'linear-gradient(135deg,rgba(20,8,40,.9),rgba(10,5,25,.95))' : seqEntry?.type==='finalCoding' ? 'linear-gradient(135deg,rgba(40,25,5,.9),rgba(20,12,2,.95))' : 'linear-gradient(135deg,rgba(8,20,50,.9),rgba(4,10,30,.95))';
+  const typeIcon  = seqEntry?.type==='tracing' ? '🔍' : seqEntry?.type==='coding' ? '💻' : seqEntry?.type==='activity' ? '🎯' : '🏁';
+  const typeLabel = seqEntry?.type==='tracing' ? 'Tracing Checkpoint' : seqEntry?.type==='coding' ? 'Coding Round' : seqEntry?.type==='activity' ? 'Activity Checkpoint' : 'Final Challenge';
+  const borderCol = seqEntry?.type==='coding' ? 'rgba(178,75,255,.5)' : seqEntry?.type==='finalCoding' ? 'rgba(245,158,11,.5)' : seqEntry?.type==='activity' ? 'rgba(74,222,128,.4)' : 'rgba(0,229,255,.4)';
+  const bgGrad    = seqEntry?.type==='coding' ? 'linear-gradient(135deg,rgba(20,8,40,.9),rgba(10,5,25,.95))' : seqEntry?.type==='finalCoding' ? 'linear-gradient(135deg,rgba(40,25,5,.9),rgba(20,12,2,.95))' : seqEntry?.type==='activity' ? 'linear-gradient(135deg,rgba(5,30,15,.9),rgba(3,15,8,.95))' : 'linear-gradient(135deg,rgba(8,20,50,.9),rgba(4,10,30,.95))';
 
   const locationHero = `
     <div class="card" style="border-color:${borderCol};background:${bgGrad}">
@@ -1843,6 +1880,21 @@ async function renderTeamDashboard(el, gs, st) {
           <div class="err-msg" id="subMsg"></div>
           <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="submitAnswer()"><i class="fas fa-paper-plane"></i> Submit Answer</button>
         ` : `<div class="alert alert-success"><i class="fas fa-check-circle"></i> Checkpoint completed!</div>`}
+      </div>`;
+
+  } else if (seqEntry?.type === 'activity') {
+    challengeHTML = `
+      ${locationHero}
+      <div class="card" style="border-color:rgba(74,222,128,.35)">
+        <div class="card-title" style="color:var(--green)"><i class="fas fa-running"></i> Activity Checkpoint</div>
+        <div style="background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.9rem;color:var(--text)">
+          🎯 Complete the activity at this location, then enter the <strong style="color:var(--green)">secret code</strong> given by the volunteer to proceed.
+        </div>
+        ${cpData?.status !== 'completed' ? `
+          <input class="inp" id="tracingAns" placeholder="Enter the activity code here…" style="margin-bottom:12px;border-color:rgba(74,222,128,.4)">
+          <div class="err-msg" id="subMsg"></div>
+          <button class="btn btn-primary btn-sm" style="margin-top:8px;background:rgba(74,222,128,.2);border-color:rgba(74,222,128,.5);color:var(--green)" onclick="submitAnswer()"><i class="fas fa-check"></i> Submit Code</button>
+        ` : `<div class="alert alert-success"><i class="fas fa-check-circle"></i> Activity completed! +${cpData?.pointsEarned||0} pts</div>`}
       </div>`;
 
   } else if (seqEntry?.type === 'coding') {
@@ -1907,7 +1959,7 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>
       <div class="cp-map" style="margin-top:16px">
         ${(sequence||[]).map(s=>{
-          const ic = {tracing:'🔍',coding:'💻',finalCoding:'🏁'}[s.type]||'?';
+          const ic = {tracing:'🔍',coding:'💻',finalCoding:'🏁',activity:'🎯'}[s.type]||'?';
           return `<div class="cp-node ${s.status}" title="Checkpoint ${s.index+1}: ${s.label}"><span>${ic}</span><span class="cp-type-chip">${s.index+1}</span></div>`;
         }).join('')}
       </div>
@@ -2067,7 +2119,8 @@ async function renderAdminGame(el) {
     </div>
     <div class="qinfo">
       <strong style="font-family:'Orbitron',sans-serif;font-size:.75rem">📊 Question Pool (50 teams):</strong><br><br>
-      • Tracing: 50 × 7 = 350 needed (recommended ~420)<br>
+      • Tracing: 50 × 3 = 150 needed (recommended ~180) — Only T1, T2, T3 active<br>
+      • Activity: T4, T5, T6, T7 use fixed code "ayush"<br>
       • Coding: 50 × 2 = 100 needed (recommended ~120)<br>
       • Final: 10 questions (papers numbered 1–10)<br><br>
       Current: <strong>${questions.filter(q=>q.type==='tracing').length}</strong> tracing, <strong>${questions.filter(q=>q.type==='coding').length}</strong> coding, <strong>${finalQs.length}</strong> final
@@ -2118,7 +2171,7 @@ async function renderAdminQuestions(el) {
     <div class="card">
       <div class="card-title"><i class="fas fa-${editingQId?'edit':'plus-circle'}"></i> ${editingQId?'Edit Question':'Add Question'}</div>
       <div style="background:rgba(0,229,255,.05);border:1px solid rgba(0,229,255,.15);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:.8rem;color:var(--muted)">
-        💡 Codes auto-generated: <strong style="color:var(--accent)">ET1,ET2…</strong> Easy Tracing · <strong style="color:var(--yellow)">MT1…</strong> Med · <strong style="color:var(--red)">HT1…</strong> Hard · <strong style="color:#c084fc">EC1…</strong> Easy Coding · <strong style="color:var(--yellow)">MC1…</strong> Med · <strong style="color:var(--red)">HC1…</strong> Hard · <strong style="color:var(--yellow)">F1…F10</strong> Final
+        💡 Codes auto-generated: <strong style="color:var(--accent)">ET1, ET2, ET3…</strong> Easy Tracing · <strong style="color:#c084fc">EC1…</strong> Easy Coding · <strong style="color:var(--yellow)">F1…F10</strong> Final
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -2170,7 +2223,8 @@ async function renderAdminQuestions(el) {
   window._allQs = questions;
 
   document.getElementById('qType').addEventListener('change', function() {
-    document.getElementById('diffGroup').style.display = this.value === 'finalCoding' ? 'none' : '';
+    const isFinal = this.value === 'finalCoding';
+    document.getElementById('diffGroup').style.display = isFinal ? 'none' : '';
   });
 }
 
@@ -2187,10 +2241,11 @@ function filterQTab(type) {
 function renderQTable(qs) {
   if (!qs.length) return '<div class="card" style="color:var(--muted);text-align:center;padding:24px">No questions yet.</div>';
   return `<div class="card" style="overflow-x:auto"><table class="tbl">
-    <thead><tr><th>Code</th><th>Type</th><th>Question #</th><th>Answer</th><th>Difficulty</th><th>Used By</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Code</th><th>Type</th><th>SubType</th><th>Question #</th><th>Answer</th><th>Difficulty</th><th>Used By</th><th>Actions</th></tr></thead>
     <tbody>${qs.map(q=>`<tr>
       <td><span style="font-family:monospace;font-weight:900;font-size:.95rem;color:var(--accent);background:rgba(0,229,255,.08);padding:4px 12px;border-radius:7px;border:1px solid rgba(0,229,255,.25)">${q.code||'—'}</span></td>
       <td><span class="badge ${q.type==='coding'?'badge-coding':q.type==='finalCoding'?'badge-final':'badge-tracing'}">${q.type}</span></td>
+      <td>${q.subType ? `<span class="badge" style="background:rgba(0,229,255,.15);border:1px solid rgba(0,229,255,.3);color:var(--accent)">Type ${q.subType}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
       <td style="font-family:'Orbitron',sans-serif;font-size:.95rem;font-weight:800;color:var(--accent)">#${q.questionNumber}</td>
       <td style="color:var(--green);font-weight:700">${q.answer}</td>
       <td>${q.type==='finalCoding'?'<span class="badge badge-final">Final</span>':`<span class="badge badge-${q.difficulty}">${q.difficulty}</span>`}</td>
@@ -2249,18 +2304,29 @@ async function renderAdminCheckpoints(el) {
   const cps = await api('GET', '/api/admin/checkpoints');
   const cpMap = {}; cps.forEach(c=>cpMap[c.label]=c);
   const allLabels = ['T1','T2','T3','T4','T5','T6','T7','C1','C2','FC'];
-  el.innerHTML = `<div class="card"><div class="card-title"><i class="fas fa-map-marked-alt"></i> Checkpoint Locations</div>
+  el.innerHTML = `
+  <div class="card" style="margin-bottom:16px;background:rgba(0,229,255,.04);border-color:rgba(0,229,255,.2)">
+    <div style="font-size:.82rem;color:var(--muted);line-height:1.6">
+      <span style="color:var(--accent);font-weight:700">ℹ️ Checkpoint System:</span> <strong style="color:var(--accent)">T1, T2, T3</strong> are tracing locations (teams solve questions and enter the answer). <strong style="color:var(--yellow)">T4, T5, T6, T7</strong> are activity locations where teams enter the activity code to proceed. Default activity code is <code style="color:var(--green)">ayush</code>.
+    </div>
+  </div>
+  <div class="card"><div class="card-title"><i class="fas fa-map-marked-alt"></i> Checkpoint Locations</div>
     ${allLabels.map(label=>{
       const existing = cpMap[label]||{};
-      const types = {T1:'🔍 Tracing',T2:'🔍 Tracing',T3:'🔍 Tracing',T4:'🔍 Tracing',T5:'🔍 Tracing',T6:'🔍 Tracing',T7:'🔍 Tracing',C1:'💻 Coding',C2:'💻 Coding',FC:'🏁 Final'};
+      const isT = label.startsWith('T');
+      const typeDesc = label.startsWith('T') ? 
+        (['T1','T2','T3'].includes(label) ? '🔍 Tracing Only' : '🎯 Activity Only') : 
+        label.startsWith('C') ? '💻 Coding (Code Entry)' : '🏁 Final';
       return `<div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
           <span class="badge ${label.startsWith('T')?'badge-tracing':label.startsWith('C')?'badge-coding':'badge-final'}">${label}</span>
-          <span style="color:var(--muted);font-size:.85rem">${types[label]}</span>
+          <span style="color:var(--muted);font-size:.85rem">${typeDesc}</span>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Location Name</label><input class="inp" id="cp_name_${label}" value="${existing.name||''}" placeholder="e.g. Main Library…"></div>
           <div class="form-group"><label>Hint / Direction Clue</label><input class="inp" id="cp_hint_${label}" value="${existing.locationHint||''}" placeholder="How to find this place…"></div>
+          ${['T4','T5','T6','T7'].includes(label) ? `<div class="form-group"><label>Activity Answer Code <span style="color:var(--muted);font-size:.75rem">(teams type this to complete activity)</span></label><input class="inp" id="cp_act_${label}" value="${existing.activityAnswer||'ayush'}" placeholder="e.g. ayush"></div>` : ''}
+          ${['C1','C2'].includes(label) ? `<div class="form-group"><label>Coding Answer Code <span style="color:var(--muted);font-size:.75rem">(teams type this to complete coding)</span></label><input class="inp" id="cp_act_${label}" value="${existing.codingAnswer||'ayush'}" placeholder="e.g. ayush"></div>` : ''}
         </div>
         <button class="btn btn-ghost btn-sm" style="margin-top:0" onclick="saveCheckpoint('${label}')"><i class="fas fa-save"></i> Save</button>
       </div>`;
@@ -2270,7 +2336,12 @@ async function renderAdminCheckpoints(el) {
 async function saveCheckpoint(label) {
   const name = document.getElementById(`cp_name_${label}`).value.trim();
   const locationHint = document.getElementById(`cp_hint_${label}`).value.trim();
-  try { await api('POST','/api/admin/checkpoints',{label,name,locationHint}); alert(`${label} saved!`); } catch(e){alert(e.message);}
+  const actEl = document.getElementById(`cp_act_${label}`);
+  const activityAnswer = actEl ? actEl.value.trim() : undefined;
+  try {
+    await api('POST','/api/admin/checkpoints',{label,name,locationHint,...(activityAnswer!==undefined?{activityAnswer}:{})});
+    alert(`${label} saved!`);
+  } catch(e){alert(e.message);}
 }
 
 /* =============================================

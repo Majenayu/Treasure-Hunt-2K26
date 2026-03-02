@@ -207,8 +207,8 @@ async function initializeDB() {
         difficultyOverride: null,
         members: [],
         registered: false,
-        player1Name: '', player1Year: '',
-        player2Name: '', player2Year: ''
+        player1Name: '', player1Year: '', player1College: '',
+        player2Name: '', player2Year: '', player2College: ''
       });
     }
     await teamsCol.insertMany(teams);
@@ -217,7 +217,12 @@ async function initializeDB() {
     // Migration: ensure fields exist on older docs
     await teamsCol.updateMany(
       { registered: { $exists: false } },
-      { $set: { registered: false, player1Name: '', player1Year: '', player2Name: '', player2Year: '' } }
+      { $set: { registered: false, player1Name: '', player1Year: '', player1College: '', player2Name: '', player2Year: '', player2College: '', members: [] } }
+    );
+    // Migration: add college fields to existing teams
+    await teamsCol.updateMany(
+      { player1College: { $exists: false } },
+      { $set: { player1College: '', player2College: '' } }
     );
   }
 
@@ -321,45 +326,173 @@ function seededShuffle(arr, seed) {
 }
 
 const CODING_PAIRS = [];
+// Generate valid coding positions: not at 1 or 9, at least 2 apart
+// Valid positions: 2-8 (indices 1-7 in 0-8 range)
+// Must have at least 2 checkpoints between them
 for (let a = 1; a <= 7; a++) {
-  for (let b = a + 3; b <= 7; b++) {
-    CODING_PAIRS.push([a, b]);
+  for (let b = a + 3; b <= 7; b++) { // +3 ensures at least 2 checkpoints between
+    // Skip if either position is 1 or 9 (indices 0 or 8)
+    if (a !== 0 && a !== 8 && b !== 0 && b !== 8) {
+      CODING_PAIRS.push([a, b]);
+    }
   }
 }
 
 function generateBalancedSequences(teams) {
-  const TRACING_LABELS = ['T1','T2','T3','T4','T5','T6','T7'];
+  // Only 3 checkpoints will be active for tracing (T1, T2, T3)
+  const TRACING_LABELS = ['T1', 'T2', 'T3'];
+  // Remaining 4 checkpoints for activity (T4, T5, T6, T7)
+  const ACTIVITY_LABELS = ['T4', 'T5', 'T6', 'T7'];
+
+  // Load balancing: track how many teams hit each position
   const stepLoad = {};
-  for (let i = 0; i < 9; i++) {
-    stepLoad[i] = {};
-    TRACING_LABELS.forEach(l => { stepLoad[i][l] = 0; });
+  for (let i = 0; i < 10; i++) {
+    stepLoad[i] = 0;
   }
 
   return teams.map((team, idx) => {
+    // Select coding pair ensuring they're not at positions 1 or 9
     const [c1Idx, c2Idx] = CODING_PAIRS[idx % CODING_PAIRS.length];
 
     const sequence = new Array(10).fill(null);
-    sequence[9]     = { type: 'finalCoding', label: 'FC', displayName: 'Final Challenge' };
+    sequence[9] = { type: 'finalCoding', label: 'FC', displayName: 'Final Challenge', locked: true };
     sequence[c1Idx] = { type: 'coding', label: 'C1', codingSlot: 1 };
     sequence[c2Idx] = { type: 'coding', label: 'C2', codingSlot: 2 };
 
+    // Get available positions (excluding coding and final)
+    const checkpointPositions = [];
+    for (let i = 0; i < 9; i++) { 
+      if (!sequence[i]) checkpointPositions.push(i); 
+    }
+
+    // Shuffle positions per team
+    const shuffledPositions = seededShuffle([...checkpointPositions], team.teamId * 31337);
+    
+    // Smart assignment: ensure no consecutive tracing rounds
+    // We need to place 3 tracing and 4 activity checkpoints
     const tracingPositions = [];
-    for (let i = 0; i < 9; i++) { if (!sequence[i]) tracingPositions.push(i); }
-
-    const shuffledPositions = seededShuffle([...tracingPositions], team.teamId * 31337);
-    const usedLabels = new Set();
-
+    const activityPositions = [];
+    
+    // Helper function to check if a position would create consecutive tracings
+    const wouldCreateConsecutiveTracing = (pos) => {
+      // Check if previous or next position already has tracing assigned
+      if (pos > 0 && tracingPositions.includes(pos - 1)) return true;
+      if (pos < 9 && tracingPositions.includes(pos + 1)) return true;
+      return false;
+    };
+    
+    // First pass: try to assign tracings to positions that don't create consecutives
     for (const pos of shuffledPositions) {
-      const candidates = TRACING_LABELS.filter(l => !usedLabels.has(l));
-      candidates.sort((a, b) => (stepLoad[pos][a] - stepLoad[pos][b]) || a.localeCompare(b));
-      const chosen = candidates[0];
-      usedLabels.add(chosen);
-      stepLoad[pos][chosen]++;
-      sequence[pos] = { type: 'tracing', label: chosen, tracingNum: parseInt(chosen.substring(1)) };
+      if (tracingPositions.length < 3 && !wouldCreateConsecutiveTracing(pos)) {
+        tracingPositions.push(pos);
+      } else {
+        activityPositions.push(pos);
+      }
+    }
+    
+    // If we couldn't place all 3 tracings, we need a different strategy
+    // This should rarely happen with 7 available positions and only 3 tracings needed
+    if (tracingPositions.length < 3) {
+      // Reset and use a greedy approach: place tracings with maximum spacing
+      tracingPositions.length = 0;
+      activityPositions.length = 0;
+      
+      // Sort positions to try placing tracings with gaps
+      const sortedPositions = [...shuffledPositions].sort((a, b) => a - b);
+      
+      for (const pos of sortedPositions) {
+        if (tracingPositions.length < 3) {
+          // Check if this position is safe (not adjacent to existing tracings)
+          const isSafe = !tracingPositions.some(tp => Math.abs(tp - pos) === 1);
+          if (isSafe) {
+            tracingPositions.push(pos);
+          } else {
+            activityPositions.push(pos);
+          }
+        } else {
+          activityPositions.push(pos);
+        }
+      }
+    }
+    
+    // Assign tracing checkpoints
+    for (let j = 0; j < tracingPositions.length; j++) {
+      const pos = tracingPositions[j];
+      stepLoad[pos]++;
+      const tracingLabel = TRACING_LABELS[j];
+      
+      sequence[pos] = {
+        type: 'tracing',
+        label: tracingLabel,
+        tracingNum: parseInt(tracingLabel.substring(1)),
+        tracingIndex: j // Track which tracing checkpoint this is (0, 1, or 2)
+      };
+    }
+    
+    // Assign activity checkpoints
+    for (let j = 0; j < activityPositions.length; j++) {
+      const pos = activityPositions[j];
+      stepLoad[pos]++;
+      const activityLabel = ACTIVITY_LABELS[j];
+      
+      sequence[pos] = {
+        type: 'activity',
+        label: activityLabel,
+        tracingNum: parseInt(activityLabel.substring(1)),
+        activityAnswer: 'ayush'
+      };
     }
 
     return sequence;
   });
+}
+
+// ─── DIFFICULTY CALCULATION BY COLLEGE & YEAR ────────────────────────────────
+function getTeamDifficultyMix(team) {
+  // Returns array of difficulties for 3 tracing questions in random order
+  // Based on college and year of both players
+  
+  const p1Year = parseInt(team.player1Year) || 1;
+  const p2Year = parseInt(team.player2Year) || 1;
+  const p1College = team.player1College || 'Other';
+  const p2College = team.player2College || 'Other';
+  
+  // Determine if team is primarily VVCE or Other
+  const isVVCE = (p1College === 'VVCE' || p2College === 'VVCE');
+  
+  // Use average year for determining difficulty
+  const avgYear = (p1Year + p2Year) / 2;
+  
+  let mix = [];
+  
+  if (isVVCE) {
+    // VVCE Students
+    if (avgYear >= 2.5) {
+      // 3rd year: 1 easy, 1 medium, 1 hard
+      mix = ['easy', 'medium', 'hard'];
+    } else if (avgYear >= 1.5) {
+      // 2nd year: 2 medium, 1 easy
+      mix = ['medium', 'medium', 'easy'];
+    } else {
+      // 1st year: 3 easy
+      mix = ['easy', 'easy', 'easy'];
+    }
+  } else {
+    // Other College Students
+    if (avgYear >= 2.5) {
+      // 3rd year: 2 medium, 1 easy
+      mix = ['medium', 'medium', 'easy'];
+    } else if (avgYear >= 1.5) {
+      // 2nd year: 2 easy, 1 medium
+      mix = ['easy', 'easy', 'medium'];
+    } else {
+      // 1st year: 3 easy
+      mix = ['easy', 'easy', 'easy'];
+    }
+  }
+  
+  // Shuffle the mix for random order
+  return seededShuffle(mix, team.teamId * 12345);
 }
 
 async function getTeamDifficulty(teamId) {
@@ -397,7 +530,7 @@ async function getTeamDifficulty(teamId) {
   return base;
 }
 
-async function assignQuestion(teamId, type, isFinal = false) {
+async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null) {
   if (isFinal) {
     // Final round: assign one of the 10 final questions by cycling teamId
     const finalQs = await db.collection('questions')
@@ -408,13 +541,46 @@ async function assignQuestion(teamId, type, isFinal = false) {
     const idx = (teamId - 1) % finalQs.length;
     return finalQs[idx];
   }
-  const difficulty = await getTeamDifficulty(teamId);
-  const order = difficulty === 'easy' ? ['easy','medium','hard']
-    : difficulty === 'medium' ? ['medium','easy','hard']
-    : ['hard','medium','easy'];
-  for (const d of order) {
+  
+  if (type === 'tracing' && tracingIndex !== null) {
+    // Get team's difficulty mix
+    const team = await db.collection('teams').findOne({ teamId });
+    if (!team) return null;
+    
+    const difficultyMix = getTeamDifficultyMix(team);
+    const targetDifficulty = difficultyMix[tracingIndex]; // Get difficulty for this specific tracing checkpoint
+    
+    // Find a question of the target difficulty that hasn't been used by this team
     const q = await db.collection('questions').findOne({
-      type, difficulty: d,
+      type: 'tracing',
+      difficulty: targetDifficulty,
+      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+    });
+    
+    if (q) {
+      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
+      return q;
+    }
+    
+    // Fallback: try any difficulty if target not available
+    const fallbackDifficulties = ['easy', 'medium', 'hard'].filter(d => d !== targetDifficulty);
+    for (const d of fallbackDifficulties) {
+      const fallbackQ = await db.collection('questions').findOne({
+        type: 'tracing',
+        difficulty: d,
+        usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+      });
+      if (fallbackQ) {
+        await db.collection('questions').updateOne({ _id: fallbackQ._id }, { $push: { usedBy: teamId } });
+        return fallbackQ;
+      }
+    }
+  }
+  
+  // For coding questions (shouldn't reach here as coding uses fixed answer)
+  if (type === 'coding') {
+    const q = await db.collection('questions').findOne({
+      type: 'coding',
       usedBy: { $not: { $elemMatch: { $eq: teamId } } }
     });
     if (q) {
@@ -422,6 +588,7 @@ async function assignQuestion(teamId, type, isFinal = false) {
       return q;
     }
   }
+  
   return null;
 }
 
@@ -454,7 +621,7 @@ app.post('/api/login', async (req, res) => {
         await db.collection('teams').insertOne({
           teamId: teamNum, name: `Team ${teamNum}`, password: 'codehunt',
           category: 'unset', difficultyOverride: null, members: [],
-          registered: false, player1Name: '', player1Year: '', player2Name: '', player2Year: ''
+          registered: false, player1Name: '', player1Year: '', player1College: '', player2Name: '', player2Year: '', player2College: ''
         });
       } catch (e) { /* unique constraint — already exists */ }
       team = await db.collection('teams').findOne({ teamId: teamNum });
@@ -481,7 +648,7 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { teamId, teamName, player1Name, player1Year, player2Name, player2Year } = req.body;
+    const { teamId, teamName, player1Name, player1Year, player1College, player2Name, player2Year, player2College } = req.body;
 
     const teamNum = parseInt(teamId);
     if (isNaN(teamNum) || teamNum < 1 || teamNum > 50) {
@@ -490,8 +657,10 @@ app.post('/api/register', async (req, res) => {
     if (!teamName || !teamName.trim()) return res.status(400).json({ error: 'Team name is required' });
     if (!player1Name || !player1Name.trim()) return res.status(400).json({ error: 'Player 1 name is required' });
     if (!player1Year) return res.status(400).json({ error: 'Player 1 year of study is required' });
+    if (!player1College) return res.status(400).json({ error: 'Player 1 college is required' });
     if (!player2Name || !player2Name.trim()) return res.status(400).json({ error: 'Player 2 name is required' });
     if (!player2Year) return res.status(400).json({ error: 'Player 2 year of study is required' });
+    if (!player2College) return res.status(400).json({ error: 'Player 2 college is required' });
 
     const team = await db.collection('teams').findOne({ teamId: teamNum });
     if (!team) return res.status(404).json({ error: 'Team not found' });
@@ -504,8 +673,8 @@ app.post('/api/register', async (req, res) => {
       {
         $set: {
           name: teamName.trim(),
-          player1Name: player1Name.trim(), player1Year: player1Year.toString(),
-          player2Name: player2Name.trim(), player2Year: player2Year.toString(),
+          player1Name: player1Name.trim(), player1Year: player1Year.toString(), player1College: player1College,
+          player2Name: player2Name.trim(), player2Year: player2Year.toString(), player2College: player2College,
           members: [player1Name.trim(), player2Name.trim()],
           category,
           registered: true,
@@ -585,7 +754,7 @@ app.get('/api/admin/questions', auth, adminOnly, async (req, res) => {
 });
 
 app.post('/api/admin/questions', auth, adminOnly, async (req, res) => {
-  const { questionNumber, answer, difficulty, type } = req.body;
+  const { questionNumber, answer, difficulty, type, subType } = req.body;
   if (!answer || !type) return res.status(400).json({ error: 'Missing fields' });
 
   // For finalCoding, difficulty is not required
@@ -596,11 +765,14 @@ app.post('/api/admin/questions', auth, adminOnly, async (req, res) => {
   if (type === 'finalCoding') {
     const existingCount = await db.collection('questions').countDocuments({ type: 'finalCoding' });
     code = `F${existingCount + 1}`;
+  } else if (type === 'tracing') {
+    const diffLetter = difficulty === 'easy' ? 'E' : difficulty === 'medium' ? 'M' : 'H';
+    const existingCount = await db.collection('questions').countDocuments({ difficulty, type });
+    code = `${diffLetter}T${existingCount + 1}`;  // e.g. ET1, MT2, HT3
   } else {
     const diffLetter = difficulty === 'easy' ? 'E' : difficulty === 'medium' ? 'M' : 'H';
-    const typeLetter = type === 'tracing' ? 'T' : 'C';
     const existingCount = await db.collection('questions').countDocuments({ difficulty, type });
-    code = `${diffLetter}${typeLetter}${existingCount + 1}`;
+    code = `${diffLetter}C${existingCount + 1}`;
   }
 
   const result = await db.collection('questions').insertOne({
@@ -608,6 +780,7 @@ app.post('/api/admin/questions', auth, adminOnly, async (req, res) => {
     answer: answer.trim(),
     difficulty: type === 'finalCoding' ? 'final' : difficulty,
     type,
+    subType: type === 'tracing' && subType ? subType : null,
     code,
     usedBy: []
   });
@@ -615,10 +788,12 @@ app.post('/api/admin/questions', auth, adminOnly, async (req, res) => {
 });
 
 app.put('/api/admin/questions/:id', auth, adminOnly, async (req, res) => {
-  const { questionNumber, answer, difficulty, type } = req.body;
+  const { questionNumber, answer, difficulty, type, subType } = req.body;
+  const upd = { questionNumber: questionNumber?.toString(), answer: answer?.trim(), difficulty, type };
+  if (type === 'tracing') upd.subType = subType || null;
   await db.collection('questions').updateOne(
     { _id: new ObjectId(req.params.id) },
-    { $set: { questionNumber: questionNumber?.toString(), answer: answer?.trim(), difficulty, type } }
+    { $set: upd }
   );
   res.json({ success: true });
 });
@@ -634,10 +809,15 @@ app.get('/api/admin/checkpoints', auth, adminOnly, async (req, res) => {
 });
 
 app.post('/api/admin/checkpoints', auth, adminOnly, async (req, res) => {
-  const { label, name, locationHint } = req.body;
+  const { label, name, locationHint, activityAnswer } = req.body;
   const existing = await db.collection('checkpoints').findOne({ label });
-  if (existing) await db.collection('checkpoints').updateOne({ label }, { $set: { name, locationHint } });
-  else await db.collection('checkpoints').insertOne({ label, name, locationHint });
+  const update = { name, locationHint };
+  // Store activityAnswer for T4-T7 checkpoints (activity locations)
+  if (['T4','T5','T6','T7'].includes(label) && activityAnswer !== undefined) update.activityAnswer = activityAnswer.trim() || 'ayush';
+  // Store codingAnswer for C1, C2 checkpoints (coding locations)
+  if (['C1','C2'].includes(label) && activityAnswer !== undefined) update.codingAnswer = activityAnswer.trim() || 'ayush';
+  if (existing) await db.collection('checkpoints').updateOne({ label }, { $set: update });
+  else await db.collection('checkpoints').insertOne({ label, ...update });
   res.json({ success: true });
 });
 
@@ -669,7 +849,7 @@ app.post('/api/admin/reset-registration/:teamId', auth, adminOnly, async (req, r
   const teamId = parseInt(req.params.teamId);
   await db.collection('teams').updateOne(
     { teamId },
-    { $set: { registered: false, name: `Team ${teamId}`, category: 'unset', player1Name: '', player1Year: '', player2Name: '', player2Year: '', members: [] } }
+    { $set: { registered: false, name: `Team ${teamId}`, category: 'unset', player1Name: '', player1Year: '', player1College: '', player2Name: '', player2Year: '', player2College: '', members: [] } }
   );
   res.json({ success: true });
 });
@@ -805,12 +985,27 @@ app.get('/api/team/state', auth, async (req, res) => {
   if (idx >= 10) return res.json({ gameStarted: true, finished: true, totalPoints: progress.totalPoints, completedCheckpoints: progress.completedCheckpoints });
 
   const seqEntry = progress.sequence[idx];
+  
+  // Check if final checkpoint is locked (need to complete first 9)
+  if (idx === 9 && seqEntry.locked) {
+    const completedFirst9 = progress.completedCheckpoints.filter(i => i < 9).length;
+    if (completedFirst9 < 9) {
+      return res.json({ 
+        gameStarted: true, 
+        finalLocked: true, 
+        message: `Final checkpoint locked. Complete all ${9 - completedFirst9} remaining checkpoints first!`,
+        completedCheckpoints: progress.completedCheckpoints,
+        totalPoints: progress.totalPoints
+      });
+    }
+  }
+  
   let cpData = progress.checkpoints.find(c => c.index === idx);
   if (!cpData) {
     let q = null;
-    if (seqEntry.type === 'tracing') q = await assignQuestion(teamId, 'tracing');
-    else if (seqEntry.type === 'coding') q = await assignQuestion(teamId, 'coding');
+    if (seqEntry.type === 'tracing') q = await assignQuestion(teamId, 'tracing', false, seqEntry.tracingIndex);
     else if (seqEntry.type === 'finalCoding') q = await assignQuestion(teamId, 'coding', true);
+    // Coding checkpoints use fixed answer from checkpoint metadata (like activity)
     const cpMeta = await db.collection('checkpoints').findOne({ label: seqEntry.label });
     cpData = {
       index: idx, type: seqEntry.type, label: seqEntry.label,
@@ -819,10 +1014,13 @@ app.get('/api/team/state', auth, async (req, res) => {
       questionId: q?._id?.toString() || null,
       questionCode: q?.code || null,
       questionNumber: q?.questionNumber || null,
-      questionAnswer: q?.answer || null,
-      // Tracing timer auto-starts the moment the clue/location is revealed to the team
-      status: seqEntry.type === 'tracing' ? 'in-progress' : 'pending',
-      timerStartedAt: seqEntry.type === 'tracing' ? new Date() : null, timerPausedAt: null,
+      questionAnswer: seqEntry.type === 'activity' ? (cpMeta?.activityAnswer || 'ayush') : 
+                      seqEntry.type === 'coding' ? (cpMeta?.codingAnswer || 'ayush') :
+                      (q?.answer || null),
+      // Tracing & activity timer auto-starts when clue/location is first revealed
+      status: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? 'in-progress' : 'pending',
+      timerStartedAt: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? new Date() : null,
+      timerPausedAt: null,
       timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
     };
     await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: cpData } });
@@ -877,7 +1075,44 @@ app.post('/api/team/submit', auth, async (req, res) => {
     return res.json({ correct: true, message: `Correct! +${points} points`, points });
   }
 
-  if (cpData.type === 'coding' || cpData.type === 'finalCoding') {
+  // Activity checkpoints: password set per-location by admin (default 'ayush') — same point rules as tracing
+  if (cpData.type === 'activity') {
+    const correctAnswer = (cpData.questionAnswer || 'ayush').trim().toLowerCase();
+    const correct = answer.trim().toLowerCase() === correctAnswer;
+    if (!correct) return res.json({ correct: false, message: 'Wrong code, try again!' });
+    let elapsedSeconds = cpData.timerUsed || 0;
+    if (cpData.timerStartedAt && !cpData.timerPausedAt)
+      elapsedSeconds += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+    const points = calcTracingPoints(elapsedSeconds);
+    await db.collection('team_progress').updateOne(
+      { teamId, 'checkpoints.index': idx },
+      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $push: { completedCheckpoints: idx }, $inc: { totalPoints: points } }
+    );
+    await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 } });
+    return res.json({ correct: true, message: `Activity complete! +${points} points. Proceed to next checkpoint!`, points });
+  }
+
+  if (cpData.type === 'coding') {
+    // Coding checkpoints now use fixed answer code (like activity)
+    const correctAnswer = (cpData.questionAnswer || 'ayush').trim().toLowerCase();
+    const correct = answer.trim().toLowerCase() === correctAnswer;
+    if (!correct) return res.json({ correct: false, message: 'Wrong code, try again!' });
+    
+    // Calculate points based on timer
+    let timerElapsed = cpData.timerUsed || 0;
+    if (cpData.timerStartedAt && !cpData.timerPausedAt)
+      timerElapsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+    const points = calcCodingPoints(timerElapsed);
+    
+    await db.collection('team_progress').updateOne(
+      { teamId, 'checkpoints.index': idx },
+      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $push: { completedCheckpoints: idx }, $inc: { totalPoints: points } }
+    );
+    await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 } });
+    return res.json({ correct: true, message: `Coding complete! +${points} points`, points });
+  }
+  
+  if (cpData.type === 'finalCoding') {
     let timerElapsed = cpData.timerUsed || 0;
     if (cpData.timerStartedAt && !cpData.timerPausedAt)
       timerElapsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
@@ -1027,9 +1262,9 @@ app.post('/api/team/swap-question', auth, async (req, res) => {
   const idx = progress.currentIndex;
   const seqEntry = progress.sequence[idx];
 
-  // Final round cannot be swapped
-  if (seqEntry.type === 'finalCoding') {
-    return res.status(400).json({ error: 'Cannot swap the final challenge question' });
+  // Final round and activity checkpoints cannot be swapped
+  if (seqEntry.type === 'finalCoding' || seqEntry.type === 'activity') {
+    return res.status(400).json({ error: 'Cannot swap this checkpoint.' });
   }
 
   // Check global swaps remaining
@@ -1048,19 +1283,22 @@ app.post('/api/team/swap-question', auth, async (req, res) => {
   const cpData = progress.checkpoints.find(c => c.index === idx);
   const currentQuestionId = cpData?.questionId;
 
-  // Assign a new question (different from current)
+  // Assign a new question (different from current), respecting subType for tracing
   const difficulty = await getTeamDifficulty(teamId);
   const order = difficulty === 'easy' ? ['easy','medium','hard']
     : difficulty === 'medium' ? ['medium','easy','hard']
     : ['hard','medium','easy'];
 
+  const swapFilter = {
+    type: seqEntry.type,
+    usedBy: { $not: { $elemMatch: { $eq: teamId } } },
+    ...(currentQuestionId ? { _id: { $ne: new ObjectId(currentQuestionId) } } : {}),
+    ...(seqEntry.type === 'tracing' && seqEntry.subType ? { subType: seqEntry.subType } : {})
+  };
+
   let newQ = null;
   for (const d of order) {
-    const q = await db.collection('questions').findOne({
-      type: seqEntry.type, difficulty: d,
-      usedBy: { $not: { $elemMatch: { $eq: teamId } } },
-      ...(currentQuestionId ? { _id: { $ne: new ObjectId(currentQuestionId) } } : {})
-    });
+    const q = await db.collection('questions').findOne({ ...swapFilter, difficulty: d });
     if (q) { newQ = q; break; }
   }
 
@@ -1106,8 +1344,9 @@ app.post('/api/team/swap-question', auth, async (req, res) => {
       questionCode: newQ.code || null,
       questionNumber: newQ.questionNumber || null,
       questionAnswer: newQ.answer || null,
-      status: seqEntry.type === 'tracing' ? 'in-progress' : 'pending',
-      timerStartedAt: seqEntry.type === 'tracing' ? new Date() : null, timerPausedAt: null,
+      status: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? 'in-progress' : 'pending',
+      timerStartedAt: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? new Date() : null,
+      timerPausedAt: null,
       timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
     };
     await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: newCp } });
