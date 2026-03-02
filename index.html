@@ -59,6 +59,10 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   line-height: 1.6;
+  /* Performance optimizations to prevent flickering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  will-change: auto;
 }
 
 /* Scanline overlay */
@@ -92,6 +96,25 @@ body::after {
 ::-webkit-scrollbar { width:5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.25); border-radius:3px; }
+
+/* =============================================
+   PERFORMANCE OPTIMIZATIONS
+   ============================================= */
+/* Smooth transitions for dynamic content updates */
+.stat-val, .timer-display, #headerPoints, #progressPct, #progressNum {
+  transition: all 0.3s ease;
+}
+
+/* Prevent layout shifts during updates */
+#mainContent {
+  contain: layout style;
+}
+
+/* GPU acceleration for smooth animations */
+.progress-bar, .stat-box, .card {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
 
 /* =============================================
    LOGIN & REGISTER PAGES
@@ -510,6 +533,7 @@ nav { display:flex; gap:4px; }
   line-height: 1;
   margin-bottom: 4px;
   text-shadow: 0 0 20px rgba(0,229,255,0.4);
+  transition: all 0.3s ease; /* Smooth value changes */
 }
 .stat-lbl {
   font-size: .7rem;
@@ -1418,6 +1442,16 @@ let pollInterval = null;
 let currentView = '';
 let pendingTeamId = null;
 
+// Performance optimization: prevent rapid re-renders
+let _isPolling = false;
+let _lastPollTime = 0;
+const MIN_POLL_INTERVAL = 2000; // Minimum 2 seconds between polls
+
+// Cache to prevent unnecessary re-renders
+let _cachedGameState = null;
+let _cachedTeamState = null;
+let _cachedLeaderboard = null;
+
 // Auto-restore session
 (async function restoreSession() {
   const savedToken  = sessionStorage.getItem('ch_token');
@@ -1647,9 +1681,7 @@ async function renderView(view) {
 }
 
 // ── SMART POLLING ──────────────────────────────────────────────
-// Cache of last known server state — used to skip re-renders
-let _cachedGameState = null;
-let _cachedTeamState = null;
+// Cache variables already defined above
 let _isFirstRender   = true;
 
 function startPolling() {
@@ -1659,18 +1691,32 @@ function startPolling() {
     if (!skip.includes(currentView)) {
       // Don't poll when tab is hidden — saves server load
       if (document.hidden) return;
+      // Don't poll if already polling
+      if (_isPolling) return;
       smartPoll();
     }
-  }, 12000); // 12s instead of 10s — reduces server load by 17%
+  }, 3000); // 3 seconds - balanced for responsiveness without excessive load
 }
 function stopPolling() {
   if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
   _cachedGameState = null;
   _cachedTeamState = null;
+  _cachedLeaderboard = null;
 }
 
 // Smart poll: fetch lightweight data and only re-render if something changed
 async function smartPoll() {
+  // Debounce: prevent polling too frequently
+  const now = Date.now();
+  if (now - _lastPollTime < MIN_POLL_INTERVAL) {
+    return;
+  }
+  _lastPollTime = now;
+  
+  // Prevent concurrent polls
+  if (_isPolling) return;
+  _isPolling = true;
+  
   try {
     if (currentView === 'dashboard') {
       const gs = await api('GET', '/api/game-state');
@@ -1681,7 +1727,7 @@ async function smartPoll() {
       const stChanged = JSON.stringify(st) !== JSON.stringify(_cachedTeamState);
 
       if (!gsChanged && !stChanged) {
-        // Nothing changed — just tick the timer, don't touch DOM
+        // Nothing changed — don't touch DOM at all
         return;
       }
 
@@ -1691,7 +1737,9 @@ async function smartPoll() {
         (st.currentIndex !== _cachedTeamState?.currentIndex) ||
         (st.finished !== _cachedTeamState?.finished) ||
         (st.noProgress !== _cachedTeamState?.noProgress) ||
+        (st.finalLocked !== _cachedTeamState?.finalLocked) ||
         (st.cpData?.status !== _cachedTeamState?.cpData?.status) ||
+        (st.cpData?.questionCode !== _cachedTeamState?.cpData?.questionCode) ||
         (_cachedGameState === null);
 
       _cachedGameState = gs;
@@ -1706,28 +1754,68 @@ async function smartPoll() {
         patchDashboard(gs, st);
       }
     } else if (currentView === 'leaderboard') {
-      renderView('leaderboard');
-    } else if (currentView === 'adminGame' || currentView === 'adminProgress' || currentView === 'organizer') {
+      // Only refresh leaderboard if data actually changed
+      const lb = await api('GET', '/api/leaderboard');
+      const lbChanged = JSON.stringify(lb) !== JSON.stringify(_cachedLeaderboard);
+      if (lbChanged) {
+        _cachedLeaderboard = lb;
+        renderView('leaderboard');
+      }
+    } else if (currentView === 'adminGame' || currentView === 'adminProgress') {
+      // Only refresh admin views if explicitly needed
+      const gs = await api('GET', '/api/game-state');
+      if (JSON.stringify(gs) !== JSON.stringify(_cachedGameState)) {
+        _cachedGameState = gs;
+        renderView(currentView);
+      }
+    } else if (currentView === 'organizer') {
+      // Organizer view needs frequent updates for coding teams
       renderView(currentView);
     }
   } catch(e) {
     console.warn('Poll error:', e.message);
+  } finally {
+    _isPolling = false;
   }
 }
 
 // Patch only the dynamic parts of the dashboard without touching inputs/textareas
 function patchDashboard(gs, st) {
-  // Update points in header
-  const pts = document.getElementById('headerPoints');
-  if (pts) pts.textContent = st.totalPoints ? `${st.totalPoints} pts` : '';
+  // Use requestAnimationFrame to batch DOM updates and prevent flickering
+  requestAnimationFrame(() => {
+    // Update points in header
+    const pts = document.getElementById('headerPoints');
+    if (pts && pts.textContent !== (st.totalPoints ? `${st.totalPoints} pts` : '')) {
+      pts.textContent = st.totalPoints ? `${st.totalPoints} pts` : '';
+    }
 
-  // Update progress bar
-  const done = (st.completedCheckpoints||[]).length;
-  const pct  = Math.round((done/10)*100);
-  const pbar = document.getElementById('progressPct');
-  const pnum = document.getElementById('progressNum');
-  if (pbar) pbar.style.width = pct + '%';
-  if (pnum) pnum.textContent = `${done}/10 Checkpoints`;
+    // Update progress bar
+    const done = (st.completedCheckpoints||[]).length;
+    const pct  = Math.round((done/10)*100);
+    const pbar = document.getElementById('progressPct');
+    const pnum = document.getElementById('progressNum');
+    if (pbar && pbar.style.width !== pct + '%') {
+      pbar.style.width = pct + '%';
+    }
+    if (pnum) {
+      const newText = `${done}/10 Checkpoints`;
+      if (pnum.textContent !== newText) {
+        pnum.textContent = newText;
+      }
+    }
+    
+    // Update swaps remaining if element exists
+    const swapsEl = document.querySelector('.stat-val');
+    if (swapsEl && st.swapsRemaining !== undefined) {
+      const swapsText = swapsEl.closest('.stat-box')?.querySelector('.stat-label')?.textContent;
+      if (swapsText && swapsText.includes('Swaps')) {
+        const newVal = String(st.swapsRemaining || 0);
+        if (swapsEl.textContent !== newVal) {
+          swapsEl.textContent = newVal;
+        }
+      }
+    }
+  });
 }
 
 /* TIMER HELPERS */
