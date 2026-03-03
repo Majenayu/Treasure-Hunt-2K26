@@ -4,11 +4,37 @@ const crypto = require('crypto');
 const path = require('path');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const webpush = require('web-push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = 'mongodb+srv://pra:pra@pra.si69pt4.mongodb.net/?appName=pra';
 const DB_NAME = 'codehunt';
+
+// Web Push VAPID keys - MUST be set as environment variables
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+
+// Configure web push notifications if VAPID keys are provided
+let notificationsEnabled = false;
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(
+      'mailto:codehunt2k26@example.com',
+      VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY
+    );
+    notificationsEnabled = true;
+    console.log('📢 Web push notifications configured');
+  } catch (err) {
+    console.warn('⚠️  VAPID keys invalid, notifications disabled:', err.message);
+    console.warn('⚠️  Generate keys with: node generate-vapid-keys.js');
+  }
+} else {
+  console.warn('⚠️  VAPID keys not set, notifications disabled');
+  console.warn('⚠️  Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY environment variables');
+  console.warn('⚠️  Generate keys with: node generate-vapid-keys.js');
+}
 
 let db;
 let dbConnected = false;
@@ -44,8 +70,13 @@ const pollLimiter = rateLimit({
 // ─── SESSION HELPERS ──────────────────────────────────────────────────────────
 async function setSession(token, data) {
   await db.collection('sessions').insertOne({
-    token, role: data.role, teamId: data.teamId || null, username: data.username || null,
-    createdAt: new Date(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    token, 
+    role: data.role, 
+    teamId: data.teamId || null, 
+    username: data.username || null,
+    checkpointType: data.checkpointType || null,
+    createdAt: new Date(), 
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
   });
 }
 async function getSession(token) {
@@ -254,6 +285,12 @@ async function initializeDB() {
   // TTL index for expired sessions
   await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
+  // Create push_subscriptions collection for notifications
+  const subsCol = db.collection('push_subscriptions');
+  try {
+    await subsCol.createIndex({ username: 1, endpoint: 1 }, { unique: true });
+  } catch(e) { /* index may already exist */ }
+
   // Init game state if missing
   const gs = db.collection('game_state');
   if (!(await gs.findOne({ key: 'main' }))) {
@@ -262,7 +299,9 @@ async function initializeDB() {
       started: false,
       startTime: null,
       finalCodingStarted: false,
-      finalCodingStartTime: null
+      finalCodingStartTime: null,
+      roundPaused: false,
+      pausedAt: null
     });
     console.log('✅ Game state initialized');
   }
@@ -274,7 +313,12 @@ function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   getSession(token).then(session => {
     if (!session) return res.status(401).json({ error: 'Session expired. Please log in again.' });
-    req.user = { role: session.role, teamId: session.teamId, username: session.username };
+    req.user = { 
+      role: session.role, 
+      teamId: session.teamId, 
+      username: session.username,
+      checkpointType: session.checkpointType || null
+    };
     next();
   }).catch(() => res.status(500).json({ error: 'Auth error' }));
 }
@@ -603,10 +647,32 @@ app.post('/api/login', async (req, res) => {
       return res.json({ token, role: 'admin' });
     }
 
-    if (username === 'user' && password === 'user') {
+    // Organizer accounts for different checkpoint types
+    const organizerAccounts = [
+      { username: 'tracing1', role: 'organizer', checkpointType: 'tracing' },
+      { username: 'tracing2', role: 'organizer', checkpointType: 'tracing' },
+      { username: 'tracing3', role: 'organizer', checkpointType: 'tracing' },
+      { username: 'coding1', role: 'organizer', checkpointType: 'coding' },
+      { username: 'coding2', role: 'organizer', checkpointType: 'coding' },
+      { username: 'activity1', role: 'organizer', checkpointType: 'activity' },
+      { username: 'activity2', role: 'organizer', checkpointType: 'activity' },
+      { username: 'activity3', role: 'organizer', checkpointType: 'activity' },
+      { username: 'activity4', role: 'organizer', checkpointType: 'activity' },
+    ];
+
+    const organizerAccount = organizerAccounts.find(acc => acc.username === username);
+    if (organizerAccount && password === 'events') {
       const token = crypto.randomBytes(32).toString('hex');
-      await setSession(token, { role: 'organizer', username: 'user' });
-      return res.json({ token, role: 'organizer' });
+      await setSession(token, { 
+        role: 'organizer', 
+        username: organizerAccount.username,
+        checkpointType: organizerAccount.checkpointType 
+      });
+      return res.json({ 
+        token, 
+        role: 'organizer',
+        checkpointType: organizerAccount.checkpointType 
+      });
     }
 
     const teamNum = parseInt(username);
@@ -701,12 +767,165 @@ app.post('/api/logout', auth, async (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ role: req.user.role, teamId: req.user.teamId, username: req.user.username });
+  res.json({ 
+    role: req.user.role, 
+    teamId: req.user.teamId, 
+    username: req.user.username,
+    checkpointType: req.user.checkpointType || null
+  });
 });
+
+// ─── PUSH NOTIFICATIONS ───────────────────────────────────────────────────────
+app.get('/api/vapid-public-key', (req, res) => {
+  if (!notificationsEnabled || !VAPID_PUBLIC_KEY) {
+    return res.status(503).json({ 
+      error: 'Notifications not configured',
+      message: 'VAPID keys not set. Notifications are disabled.'
+    });
+  }
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post('/api/subscribe-notifications', auth, async (req, res) => {
+  if (!notificationsEnabled) {
+    return res.status(503).json({ 
+      error: 'Notifications not configured',
+      message: 'VAPID keys not set. Notifications are disabled.'
+    });
+  }
+  
+  try {
+    const { subscription } = req.body;
+    const username = req.user.username;
+    
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ error: 'Invalid subscription' });
+    }
+    
+    // Store subscription in database (for both organizers and teams)
+    await db.collection('push_subscriptions').updateOne(
+      { username, endpoint: subscription.endpoint },
+      { 
+        $set: { 
+          subscription,
+          role: req.user.role,
+          checkpointType: req.user.checkpointType,
+          teamId: req.user.teamId || null,
+          updatedAt: new Date() 
+        } 
+      },
+      { upsert: true }
+    );
+    
+    res.json({ success: true, message: 'Notifications enabled!' });
+  } catch (err) {
+    console.error('Subscribe error:', err);
+    res.status(500).json({ error: 'Failed to subscribe' });
+  }
+});
+
+app.post('/api/unsubscribe-notifications', auth, async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    const username = req.user.username;
+    
+    await db.collection('push_subscriptions').deleteOne({ username, endpoint });
+    
+    res.json({ success: true, message: 'Notifications disabled' });
+  } catch (err) {
+    console.error('Unsubscribe error:', err);
+    res.status(500).json({ error: 'Failed to unsubscribe' });
+  }
+});
+
+// Helper function to send notifications
+async function sendNotificationToOrganizers(checkpointType, title, body, data = {}) {
+  if (!notificationsEnabled) {
+    console.log('📢 Notification skipped (VAPID not configured):', title);
+    return;
+  }
+  
+  try {
+    const subscriptions = await db.collection('push_subscriptions')
+      .find({ role: 'organizer', checkpointType })
+      .toArray();
+    
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data,
+      timestamp: Date.now()
+    });
+    
+    const sendPromises = subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(sub.subscription, payload);
+      } catch (err) {
+        console.error('Failed to send notification:', err);
+        // Remove invalid subscriptions
+        if (err.statusCode === 410) {
+          await db.collection('push_subscriptions').deleteOne({ _id: sub._id });
+        }
+      }
+    });
+    
+    await Promise.all(sendPromises);
+  } catch (err) {
+    console.error('Notification error:', err);
+  }
+}
+
+// Helper function to send broadcast notifications to ALL users (teams + organizers)
+async function sendBroadcastNotification(title, body, data = {}) {
+  if (!notificationsEnabled) {
+    console.log('📢 Broadcast skipped (VAPID not configured):', title);
+    return;
+  }
+  
+  try {
+    const subscriptions = await db.collection('push_subscriptions').find({}).toArray();
+    
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data,
+      timestamp: Date.now(),
+      requireInteraction: true
+    });
+    
+    const sendPromises = subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(sub.subscription, payload);
+      } catch (err) {
+        console.error('Failed to send notification:', err);
+        if (err.statusCode === 410) {
+          await db.collection('push_subscriptions').deleteOne({ _id: sub._id });
+        }
+      }
+    });
+    
+    await Promise.all(sendPromises);
+    console.log(`📢 Broadcast sent to ${subscriptions.length} subscribers`);
+  } catch (err) {
+    console.error('Broadcast error:', err);
+  }
+}
 
 // ─── GAME STATE ───────────────────────────────────────────────────────────────
 app.get('/api/game-state', async (req, res) => {
-  res.json(await db.collection('game_state').findOne({ key: 'main' }));
+  const gs = await db.collection('game_state').findOne({ key: 'main' });
+  res.json({
+    started: gs.started,
+    startTime: gs.startTime,
+    finalCodingStarted: gs.finalCodingStarted,
+    finalCodingStartTime: gs.finalCodingStartTime,
+    roundPaused: gs.roundPaused || false,
+    pausedAt: gs.pausedAt || null
+  });
 });
 
 // ─── LEADERBOARD ──────────────────────────────────────────────────────────────
@@ -973,11 +1192,91 @@ app.post('/api/admin/final-coding-start', auth, adminOnly, async (req, res) => {
   res.json({ success: true });
 });
 
+// ─── ADMIN: Broadcast Time Alerts ─────────────────────────────────────────────
+app.post('/api/admin/broadcast-alert', auth, adminOnly, async (req, res) => {
+  const { alertType } = req.body;
+  
+  let title, body, icon;
+  
+  switch(alertType) {
+    case '1hour':
+      title = '⏰ 1 Hour Remaining!';
+      body = 'Only 1 hour left in the event. Keep pushing!';
+      icon = '⏰';
+      break;
+    case '30min':
+      title = '⚡ 30 Minutes Left!';
+      body = 'Half an hour remaining. Time to speed up!';
+      icon = '⚡';
+      break;
+    case '5min':
+      title = '🔥 Final 5 Minutes!';
+      body = 'Last 5 minutes! Give it your all!';
+      icon = '🔥';
+      break;
+    default:
+      return res.status(400).json({ error: 'Invalid alert type' });
+  }
+  
+  await sendBroadcastNotification(title, body, { type: 'time_alert', alertType });
+  
+  res.json({ success: true, message: `${title} broadcast sent to all participants!` });
+});
+
+// ─── ADMIN: Pause/Resume Round (Round Over) ──────────────────────────────────
+app.post('/api/admin/toggle-round', auth, adminOnly, async (req, res) => {
+  const gs = await db.collection('game_state').findOne({ key: 'main' });
+  const newPausedState = !gs.roundPaused;
+  
+  await db.collection('game_state').updateOne(
+    { key: 'main' },
+    { 
+      $set: { 
+        roundPaused: newPausedState,
+        pausedAt: newPausedState ? new Date() : null
+      } 
+    }
+  );
+  
+  if (newPausedState) {
+    // Round paused - send "Round Over" notification
+    await sendBroadcastNotification(
+      '🏁 Round Over!',
+      'The round has ended. Check the leaderboard!',
+      { type: 'round_over', paused: true }
+    );
+  } else {
+    // Round resumed - send "Round Resumed" notification
+    await sendBroadcastNotification(
+      '▶️ Round Resumed!',
+      'The event has resumed. Continue your progress!',
+      { type: 'round_resumed', paused: false }
+    );
+  }
+  
+  res.json({ 
+    success: true, 
+    roundPaused: newPausedState,
+    message: newPausedState ? 'Round paused. All teams see leaderboard.' : 'Round resumed. Teams can continue.'
+  });
+});
+
 // ─── TEAM: Game State ─────────────────────────────────────────────────────────
 app.get('/api/team/state', auth, async (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
   const teamId = req.user.teamId;
   const gs = await db.collection('game_state').findOne({ key: 'main' });
+  
+  // Check if round is paused
+  if (gs.roundPaused) {
+    return res.json({ 
+      gameStarted: true, 
+      roundPaused: true,
+      pausedAt: gs.pausedAt,
+      message: 'Round is paused. Check the leaderboard!'
+    });
+  }
+  
   if (!gs.started) return res.json({ gameStarted: false });
   let progress = await db.collection('team_progress').findOne({ teamId });
   if (!progress) return res.json({ gameStarted: true, noProgress: true });
@@ -1032,10 +1331,36 @@ app.get('/api/team/state', auth, async (req, res) => {
   if (cpData.timerStartedAt && !cpData.timerPausedAt)
     timerElapsed += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
 
+  // Check if activity checkpoint has been active for 20+ minutes and send notification
+  if (seqEntry.type === 'activity' && cpData.timerStartedAt && !cpData.notified20Min) {
+    const elapsedMinutes = timerElapsed / 60;
+    if (elapsedMinutes >= 20) {
+      // Mark as notified to avoid spam
+      await db.collection('team_progress').updateOne(
+        { teamId, 'checkpoints.index': idx },
+        { $set: { 'checkpoints.$.notified20Min': true } }
+      );
+      
+      // Send notification to activity organizers
+      const team = await db.collection('teams').findOne({ teamId });
+      await sendNotificationToOrganizers(
+        'activity',
+        '⏰ Team Stuck Alert',
+        `${team?.name || 'Team ' + teamId} has been at ${cpData.locationName || seqEntry.label} for over 20 minutes!`,
+        { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId }
+      );
+    }
+  }
+
   res.json({
-    gameStarted: true, teamId, currentIndex: idx, totalCheckpoints: 10, seqEntry,
+    gameStarted: true, 
+    teamId, 
+    currentIndex: idx, 
+    totalCheckpoints: 10, 
+    seqEntry,
     cpData: { ...cpData, timerElapsed: Math.floor(timerElapsed) },
-    completedCheckpoints: progress.completedCheckpoints, totalPoints: progress.totalPoints,
+    completedCheckpoints: progress.completedCheckpoints, 
+    totalPoints: progress.totalPoints,
     sequence: progress.sequence.map((s, i) => ({
       ...s, index: i,
       status: (progress.completedCheckpoints || []).includes(i) ? 'completed' : i === idx ? 'current' : i < idx ? 'skipped' : 'pending'
@@ -1043,7 +1368,9 @@ app.get('/api/team/state', auth, async (req, res) => {
     deferredCoding: progress.deferredCoding || [],
     swapsRemaining: progress.swapsRemaining ?? 3,
     swapsUsedAtCurrentCheckpoint: (progress.swapsUsedPerCheckpoint || {})[idx] || 0,
-    finalCodingStarted: gs.finalCodingStarted, finalCodingStartTime: gs.finalCodingStartTime
+    finalCodingStarted: gs.finalCodingStarted, 
+    finalCodingStartTime: gs.finalCodingStartTime,
+    roundPaused: gs.roundPaused || false
   });
 });
 
@@ -1135,8 +1462,19 @@ app.post('/api/team/defer-coding', auth, async (req, res) => {
   const idx = progress.currentIndex;
   const seqEntry = progress.sequence[idx];
   if (seqEntry.type !== 'coding') return res.status(400).json({ error: 'Can only defer non-final coding rounds' });
+  
   await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': idx }, { $set: { 'checkpoints.$.status': 'deferred' } });
   await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 }, $push: { deferredCoding: { originalIndex: idx, label: seqEntry.label, deferredAt: new Date(), completed: false } } });
+  
+  // Send notification to coding organizers
+  const team = await db.collection('teams').findOne({ teamId });
+  await sendNotificationToOrganizers(
+    'coding',
+    '⏭️ Coding Deferred',
+    `${team?.name || 'Team ' + teamId} has deferred ${seqEntry.label} coding checkpoint`,
+    { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId, action: 'deferred' }
+  );
+  
   res.json({ success: true, message: 'Coding round deferred. Complete it before the final checkpoint!' });
 });
 
@@ -1152,28 +1490,102 @@ app.post('/api/team/activate-deferred', auth, async (req, res) => {
   if (cpData) {
     await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': originalIndex }, { $set: { 'checkpoints.$.status': 'pending', 'checkpoints.$.timerRequested': true } });
   }
+  
+  // Send notification to coding organizers
+  const team = await db.collection('teams').findOne({ teamId });
+  const seqEntry = progress.sequence[originalIndex];
+  await sendNotificationToOrganizers(
+    'coding',
+    '🔔 Timer Request',
+    `${team?.name || 'Team ' + teamId} is ready to start deferred ${seqEntry?.label || 'coding'} checkpoint`,
+    { teamId, checkpointIndex: originalIndex, teamName: team?.name || 'Team ' + teamId, action: 'timer_request' }
+  );
+  
   res.json({ success: true, message: 'Activated! Ask organizer to start your timer.' });
 });
 
 // ─── ORGANIZER ────────────────────────────────────────────────────────────────
-app.get('/api/organizer/coding-teams', auth, orgOrAdmin, async (req, res) => {
+// Get teams at specific checkpoint types (filtered by organizer's checkpoint type)
+app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) => {
+  const checkpointType = req.user.checkpointType || req.query.type; // Admin can query any type
+  
   const allProgress = await db.collection('team_progress').find({}).toArray();
   const teams = await db.collection('teams').find({}).toArray();
   const tm = {};
   for (const t of teams) { if (!tm[t.teamId] || t.registered) tm[t.teamId] = t; }
+  
   const result = [];
+  
   for (const p of allProgress) {
     const idx = p.currentIndex;
     const seq = p.sequence?.[idx];
     if (!seq) continue;
+    
     const cpData = p.checkpoints.find(c => c.index === idx);
-    if (seq.type === 'coding') result.push({ teamId: p.teamId, name: tm[p.teamId]?.name || `Team ${p.teamId}`, currentIndex: idx, seq, cpData, isDeferred: false, deferred: p.deferredCoding || [] });
-    for (const def of (p.deferredCoding || [])) {
-      if (def.completed) continue;
-      const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
-      if (dc) result.push({ teamId: p.teamId, name: tm[p.teamId]?.name || `Team ${p.teamId}`, currentIndex: def.originalIndex, seq: p.sequence[def.originalIndex], cpData: dc, isDeferred: true, deferred: p.deferredCoding || [] });
+    
+    // Filter by checkpoint type
+    if (checkpointType && seq.type !== checkpointType) {
+      // For coding organizers, also check deferred coding
+      if (checkpointType === 'coding') {
+        for (const def of (p.deferredCoding || [])) {
+          if (def.completed) continue;
+          const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
+          if (dc) {
+            result.push({ 
+              teamId: p.teamId, 
+              name: tm[p.teamId]?.name || `Team ${p.teamId}`, 
+              currentIndex: def.originalIndex, 
+              seq: p.sequence[def.originalIndex], 
+              cpData: dc, 
+              isDeferred: true, 
+              deferred: p.deferredCoding || [],
+              canSkip: false
+            });
+          }
+        }
+      }
+      continue;
+    }
+    
+    // Calculate if team can skip (only for activity checkpoints)
+    let canSkip = false;
+    if (seq.type === 'activity' && cpData && cpData.timerStartedAt) {
+      const elapsedMinutes = (Date.now() - new Date(cpData.timerStartedAt).getTime()) / (1000 * 60);
+      canSkip = elapsedMinutes >= 20;
+    }
+    
+    result.push({ 
+      teamId: p.teamId, 
+      name: tm[p.teamId]?.name || `Team ${p.teamId}`, 
+      currentIndex: idx, 
+      seq, 
+      cpData, 
+      isDeferred: false, 
+      deferred: p.deferredCoding || [],
+      canSkip
+    });
+    
+    // For coding organizers, also include deferred coding
+    if (checkpointType === 'coding' || !checkpointType) {
+      for (const def of (p.deferredCoding || [])) {
+        if (def.completed) continue;
+        const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
+        if (dc) {
+          result.push({ 
+            teamId: p.teamId, 
+            name: tm[p.teamId]?.name || `Team ${p.teamId}`, 
+            currentIndex: def.originalIndex, 
+            seq: p.sequence[def.originalIndex], 
+            cpData: dc, 
+            isDeferred: true, 
+            deferred: p.deferredCoding || [],
+            canSkip: false
+          });
+        }
+      }
     }
   }
+  
   res.json(result);
 });
 
@@ -1250,6 +1662,63 @@ app.post('/api/organizer/mark-final', auth, orgOrAdmin, async (req, res) => {
   }
   await db.collection('team_progress').updateOne({ teamId: teamIdInt, 'checkpoints.index': 9 }, { $set: { 'checkpoints.$.status': status } });
   res.json({ success: true });
+});
+
+// ─── ORGANIZER: Skip Activity Checkpoint (after 20 mins) ─────────────────────
+app.post('/api/organizer/skip-activity', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, checkpointIndex } = req.body;
+  const teamIdInt = parseInt(teamId);
+  const idx = parseInt(checkpointIndex);
+  
+  const progress = await db.collection('team_progress').findOne({ teamId: teamIdInt });
+  if (!progress) return res.status(400).json({ error: 'Team progress not found' });
+  
+  const seq = progress.sequence?.[idx];
+  if (!seq || seq.type !== 'activity') {
+    return res.status(400).json({ error: 'Can only skip activity checkpoints' });
+  }
+  
+  const cpData = progress.checkpoints.find(c => c.index === idx);
+  if (!cpData || !cpData.timerStartedAt) {
+    return res.status(400).json({ error: 'Activity not started yet' });
+  }
+  
+  // Check if 20 minutes have passed
+  const elapsedMinutes = (Date.now() - new Date(cpData.timerStartedAt).getTime()) / (1000 * 60);
+  if (elapsedMinutes < 20) {
+    return res.status(400).json({ 
+      error: `Cannot skip yet. Team must wait ${Math.ceil(20 - elapsedMinutes)} more minutes.` 
+    });
+  }
+  
+  // Award 50 points and mark as completed
+  const points = 50;
+  await db.collection('team_progress').updateOne(
+    { teamId: teamIdInt, 'checkpoints.index': idx },
+    { 
+      $set: { 
+        'checkpoints.$.status': 'skipped', 
+        'checkpoints.$.completedAt': new Date(), 
+        'checkpoints.$.pointsEarned': points,
+        'checkpoints.$.skippedByOrganizer': true
+      } 
+    }
+  );
+  
+  await db.collection('team_progress').updateOne(
+    { teamId: teamIdInt },
+    { 
+      $set: { currentIndex: idx + 1 },
+      $push: { completedCheckpoints: idx },
+      $inc: { totalPoints: points }
+    }
+  );
+  
+  res.json({ 
+    success: true, 
+    message: `Activity skipped. Team awarded ${points} points and moved to next checkpoint.`,
+    points 
+  });
 });
 
 // ─── TEAM: Swap / Regenerate Question ────────────────────────────────────────

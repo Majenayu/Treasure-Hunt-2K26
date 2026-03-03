@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>CodeHunt 2K26 — Mission Control</title>
+<title>CodeHunt 2K26 — Mission Control v2.0</title>
+
+<!-- Cache Control -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 
 <!-- PWA Meta -->
 <meta name="application-name" content="CodeHunt 2K26">
@@ -1537,6 +1542,12 @@ function finishLogin(d) {
   document.getElementById('app').classList.remove('hidden');
   setHeaderUser(d);
   setupNav();
+  
+  // Request notification permission for teams and organizers
+  if (userRole === 'team' || userRole === 'organizer') {
+    requestNotificationPermission();
+  }
+  
   if (userRole === 'team')      navigate('dashboard');
   else if (userRole === 'admin') navigate('adminGame');
   else                           navigate('organizer');
@@ -1866,6 +1877,36 @@ async function renderTeamDashboard(el, gs, st) {
   // Use pre-fetched state if available (avoids duplicate API call from smartPoll)
   const state = st || (await api('GET', '/api/team/state'));
   _cachedTeamState = state;
+  
+  // Check if round is paused
+  if (state.roundPaused) {
+    el.innerHTML = `
+      <div class="card" style="text-align:center;padding:48px;border-color:rgba(245,158,11,.5);background:linear-gradient(135deg,rgba(40,25,5,.9),rgba(20,12,2,.95));animation:bounceIn 0.6s ease-out">
+        <div style="font-size:4rem;margin-bottom:16px;animation:pulse 2s infinite">🏁</div>
+        <div class="card-title" style="justify-content:center;color:var(--yellow);font-size:1.8rem;font-family:'Orbitron',sans-serif;margin-bottom:12px">Round Over!</div>
+        <p style="color:var(--text);margin-bottom:24px;font-size:1.1rem">The round has ended. Check the leaderboard below!</p>
+        <div style="padding:16px;background:rgba(245,158,11,.1);border-radius:12px;border:1px solid rgba(245,158,11,.3);margin-bottom:16px">
+          <div style="color:var(--muted);font-size:.9rem">⏸️ Waiting for organizers to resume the event...</div>
+        </div>
+        <button class="btn btn-primary" onclick="renderView('leaderboard')" style="margin-top:8px">
+          <i class="fas fa-trophy"></i> View Leaderboard
+        </button>
+      </div>
+      <style>
+        @keyframes bounceIn {
+          0% { transform: scale(0.3); opacity: 0; }
+          50% { transform: scale(1.05); }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+      </style>`;
+    return;
+  }
+  
   if (state.noProgress) { el.innerHTML = `<div class="card"><p style="color:var(--muted)">Your team data is not ready yet. Please wait.</p></div>`; return; }
   
   // Check if final checkpoint is locked
@@ -2166,6 +2207,10 @@ async function renderAdminGame(el) {
   const gs = await api('GET', '/api/game-state');
   const questions = await api('GET', '/api/admin/questions');
   const finalQs = questions.filter(q=>q.type==='finalCoding');
+  
+  // Check round state for button
+  setTimeout(() => checkRoundState(), 100);
+  
   el.innerHTML = `
     <div class="card">
       <div class="card-title"><i class="fas fa-gamepad"></i> Event Control Panel</div>
@@ -2197,6 +2242,17 @@ async function renderAdminGame(el) {
       <p style="color:var(--muted);margin-bottom:12px;font-size:.88rem">10 different question papers are given to teams. Each team is auto-assigned a paper number based on their team ID.</p>
       <div class="alert alert-info"><i class="fas fa-info-circle"></i> ${finalQs.length} final question(s) added. Teams assigned papers in order (Team 1→Paper 1, cycling).</div>
       ${!gs.finalCodingStarted?`<button class="btn btn-primary btn-sm" style="width:auto;margin-top:8px" onclick="startFinalCoding()"><i class="fas fa-play"></i> Start Final Round Timer</button>`:`<div class="alert alert-success" style="margin-top:8px"><i class="fas fa-check-circle"></i> Final round started at ${new Date(gs.finalCodingStartTime).toLocaleTimeString()}</div>`}
+    </div>
+    <div class="card" style="border-color:rgba(147,51,234,.4)">
+      <div class="card-title" style="color:#a78bfa"><i class="fas fa-bullhorn"></i> Broadcast Alerts</div>
+      <p style="color:var(--muted);margin-bottom:12px;font-size:.88rem">Send time alerts to all participants (teams + organizers). Click manually when needed.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="sendTimeAlert('1hour')" style="background:linear-gradient(135deg,#667eea,#764ba2)"><i class="fas fa-clock"></i> 🕐 1 Hour Left</button>
+        <button class="btn btn-primary btn-sm" onclick="sendTimeAlert('30min')" style="background:linear-gradient(135deg,#f093fb,#f5576c)"><i class="fas fa-bolt"></i> ⚡ 30 Minutes Left</button>
+        <button class="btn btn-primary btn-sm" onclick="sendTimeAlert('5min')" style="background:linear-gradient(135deg,#fa709a,#fee140)"><i class="fas fa-fire"></i> 🔥 5 Minutes Left</button>
+      </div>
+      <button id="roundToggleBtn" class="btn btn-warn btn-sm" onclick="toggleRound()" style="width:auto"><i class="fas fa-flag-checkered"></i> 🏁 Round Over</button>
+      <div id="roundStatus" style="margin-top:8px;font-size:.85rem;color:var(--muted)"></div>
     </div>
     <div class="card" style="border-color:rgba(239,68,68,.3)">
       <div class="card-title" style="color:var(--red)"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
@@ -2234,6 +2290,64 @@ async function adminReset() {
 async function startFinalCoding() {
   if (!confirm('Start the final round timer for all teams?')) return;
   try { await api('POST','/api/admin/final-coding-start'); alert('Final round started!'); renderView('adminGame'); } catch(e){alert(e.message);}
+}
+
+// Broadcast time alerts
+async function sendTimeAlert(alertType) {
+  const messages = {
+    '1hour': '1 Hour Remaining',
+    '30min': '30 Minutes Left',
+    '5min': 'Final 5 Minutes'
+  };
+  if (!confirm(`Send "${messages[alertType]}" alert to all participants?`)) return;
+  try {
+    const response = await api('POST', '/api/admin/broadcast-alert', { alertType });
+    alert(response.message || 'Broadcast sent!');
+  } catch(e) {
+    alert('Failed to send broadcast: ' + e.message);
+  }
+}
+
+// Toggle round pause/resume
+async function toggleRound() {
+  const btn = document.getElementById('roundToggleBtn');
+  const isPaused = btn.textContent.includes('Resume');
+  const action = isPaused ? 'resume' : 'pause';
+  if (!confirm(`${action === 'pause' ? 'Pause' : 'Resume'} the round?`)) return;
+  try {
+    const response = await api('POST', '/api/admin/toggle-round');
+    alert(response.message || 'Round state updated!');
+    updateRoundButton(response.roundPaused);
+  } catch(e) {
+    alert('Failed to toggle round: ' + e.message);
+  }
+}
+
+// Update round button state
+function updateRoundButton(isPaused) {
+  const btn = document.getElementById('roundToggleBtn');
+  const status = document.getElementById('roundStatus');
+  if (isPaused) {
+    btn.innerHTML = '<i class="fas fa-play"></i> ▶️ Resume Round';
+    btn.className = 'btn btn-success btn-sm';
+    status.textContent = '⏸️ Round is paused - Teams see leaderboard only';
+    status.style.color = 'var(--yellow)';
+  } else {
+    btn.innerHTML = '<i class="fas fa-flag-checkered"></i> 🏁 Round Over';
+    btn.className = 'btn btn-warn btn-sm';
+    status.textContent = '▶️ Round is active';
+    status.style.color = 'var(--green)';
+  }
+}
+
+// Check round state on admin panel load
+async function checkRoundState() {
+  try {
+    const gs = await api('GET', '/api/game-state');
+    updateRoundButton(gs.roundPaused || false);
+  } catch(e) {
+    console.error('Failed to check round state:', e);
+  }
 }
 
 /* =============================================
@@ -2790,8 +2904,84 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       console.log('SW registered:', reg.scope);
+      console.log('✅ CodeHunt v2.0 - Broadcast features loaded!');
+      console.log('Functions available:', typeof sendTimeAlert, typeof toggleRound);
     }).catch(err => console.log('SW failed:', err));
   });
+}
+
+// Request notification permission and subscribe
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) {
+    console.log('Notifications not supported');
+    return;
+  }
+  
+  if (Notification.permission === 'granted') {
+    await subscribeToNotifications();
+    return;
+  }
+  
+  if (Notification.permission !== 'denied') {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      await subscribeToNotifications();
+    }
+  }
+}
+
+async function subscribeToNotifications() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    
+    // Get VAPID public key
+    const response = await fetch('/api/vapid-public-key');
+    if (!response.ok) {
+      console.log('ℹ️ Notifications not configured on server');
+      return;
+    }
+    
+    const data = await response.json();
+    if (!data.publicKey) {
+      console.log('ℹ️ Notifications not available');
+      return;
+    }
+    
+    // Subscribe to push notifications
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(data.publicKey)
+    });
+    
+    // Send subscription to server
+    const subResponse = await fetch('/api/subscribe-notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      },
+      body: JSON.stringify(subscription)
+    });
+    
+    if (subResponse.ok) {
+      console.log('✅ Subscribed to notifications');
+    } else {
+      console.log('ℹ️ Notifications not available');
+    }
+  } catch (err) {
+    console.log('ℹ️ Notifications not available:', err.message);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }
 
 // Install prompt

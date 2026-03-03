@@ -1,5 +1,5 @@
 // CodeHunt 2K26 — Service Worker
-// Caches static assets, serves API fresh from network
+// Caches static assets, serves API fresh from network, handles push notifications
 
 const CACHE_NAME = 'codehunt-v1';
 const STATIC_ASSETS = ['/'];
@@ -48,4 +48,43 @@ self.addEventListener('fetch', e => {
       });
     })
   );
+});
+
+// Push notification handler
+self.addEventListener('push', e => {
+  if (!e.data) return;
+  
+  try {
+    const data = e.data.json();
+    const options = {
+      body: data.body || 'New notification',
+      icon: data.icon || '/icon-192.png',
+      badge: data.badge || '/icon-192.png',
+      vibrate: [200, 100, 200],
+      tag: data.tag || 'codehunt-notification',
+      requireInteraction: true,
+      data: data.data || {},
+      actions: [
+        { action: 'view', title: 'View' },
+        { action: 'close', title: 'Dismiss' }
+      ]
+    };
+    
+    e.waitUntil(
+      self.registration.showNotification(data.title || 'CodeHunt 2K26', options)
+    );
+  } catch (err) {
+    console.error('Push notification error:', err);
+  }
+});
+
+// Notification click handler
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  
+  if (e.action === 'view' || !e.action) {
+    e.waitUntil(
+      clients.openWindow('/') // Open the app
+    );
+  }
 });
