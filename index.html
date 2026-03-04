@@ -1641,7 +1641,7 @@ function setupNav() {
   let tabs = [];
   if      (userRole === 'team')  tabs = [['dashboard','🗺️ Dashboard'],['leaderboard','🏆 Leaderboard']];
   else if (userRole === 'admin') tabs = [['adminGame','⚙️ Game'],['adminQuestions','📋 Questions'],['adminCheckpoints','📍 Locations'],['adminTeams','👥 Teams'],['adminProgress','📊 Progress'],['leaderboard','🏆 Leaderboard']];
-  else                           tabs = [['organizer','🔧 Coding Teams'],['leaderboard','🏆 Leaderboard']];
+  else                           tabs = [['organizer','🔧 Checkpoints'],['leaderboard','🏆 Leaderboard']];
   nav.innerHTML = tabs.map(([v,l]) => `<button class="nav-btn" id="nav-${v}" onclick="navigate('${v}')">${l}</button>`).join('');
   // Sync mobile drawer too
   if (typeof syncDrawerNav === 'function') syncDrawerNav();
@@ -2847,7 +2847,7 @@ function syncDrawerNav() {
   let tabs = [];
   if      (userRole === 'team')  tabs = [['dashboard','🗺️','Dashboard'],['leaderboard','🏆','Leaderboard']];
   else if (userRole === 'admin') tabs = [['adminGame','⚙️','Game'],['adminQuestions','📋','Questions'],['adminCheckpoints','📍','Locations'],['adminTeams','👥','Teams'],['adminProgress','📊','Progress'],['leaderboard','🏆','Leaderboard']];
-  else                           tabs = [['organizer','🔧','Coding Teams'],['leaderboard','🏆','Leaderboard']];
+  else                           tabs = [['organizer','🔧','Checkpoints'],['leaderboard','🏆','Leaderboard']];
   nav.innerHTML = tabs.map(([v,ico,lbl]) =>
     `<button class="nav-btn${currentView===v?' active':''}" onclick="navigate('${v}');closeDrawer();">
       <span>${ico}</span>${lbl}
