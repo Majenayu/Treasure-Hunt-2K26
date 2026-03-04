@@ -276,12 +276,6 @@ async function initializeDB() {
   }
   if (progressDupesRemoved > 0) console.log(`🧹 Removed ${progressDupesRemoved} duplicate team_progress record(s)`);
 
-  // Migration: add swaps fields to existing progress docs
-  await db.collection('team_progress').updateMany(
-    { swapsRemaining: { $exists: false } },
-    { $set: { swapsRemaining: 3, swapsUsedPerCheckpoint: {} } }
-  );
-
   // TTL index for expired sessions
   await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
@@ -1170,9 +1164,7 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
         completedCheckpoints: [],
         totalPoints: 0,
         startTime: now,
-        deferredCoding: [],
-        swapsRemaining: 3,
-        swapsUsedPerCheckpoint: {}
+        deferredCoding: []
       });
     }
   }
@@ -1366,8 +1358,6 @@ app.get('/api/team/state', auth, async (req, res) => {
       status: (progress.completedCheckpoints || []).includes(i) ? 'completed' : i === idx ? 'current' : i < idx ? 'skipped' : 'pending'
     })),
     deferredCoding: progress.deferredCoding || [],
-    swapsRemaining: progress.swapsRemaining ?? 3,
-    swapsUsedAtCurrentCheckpoint: (progress.swapsUsedPerCheckpoint || {})[idx] || 0,
     finalCodingStarted: gs.finalCodingStarted, 
     finalCodingStartTime: gs.finalCodingStartTime,
     roundPaused: gs.roundPaused || false
@@ -1719,140 +1709,6 @@ app.post('/api/organizer/skip-activity', auth, orgOrAdmin, async (req, res) => {
     message: `Activity skipped. Team awarded ${points} points and moved to next checkpoint.`,
     points 
   });
-});
-
-// ─── TEAM: Swap / Regenerate Question ────────────────────────────────────────
-app.post('/api/team/swap-question', auth, async (req, res) => {
-  if (req.user.role !== 'team') return res.status(403).json({ error: 'Teams only' });
-  const teamId = req.user.teamId;
-  const progress = await db.collection('team_progress').findOne({ teamId });
-  if (!progress) return res.status(400).json({ error: 'No progress found' });
-
-  const idx = progress.currentIndex;
-  const seqEntry = progress.sequence[idx];
-
-  // Final round and activity checkpoints cannot be swapped
-  if (seqEntry.type === 'finalCoding' || seqEntry.type === 'activity') {
-    return res.status(400).json({ error: 'Cannot swap this checkpoint.' });
-  }
-
-  // Check global swaps remaining
-  const swapsRemaining = progress.swapsRemaining ?? 3;
-  if (swapsRemaining <= 0) {
-    return res.status(400).json({ error: 'No swaps remaining! You have used all 3 swaps.' });
-  }
-
-  // Check per-checkpoint swap limit (max 1 per checkpoint)
-  const swapsUsedHere = (progress.swapsUsedPerCheckpoint || {})[idx] || 0;
-  if (swapsUsedHere >= 1) {
-    return res.status(400).json({ error: 'You have already used your swap for this checkpoint.' });
-  }
-
-  // Get current question to exclude it
-  const cpData = progress.checkpoints.find(c => c.index === idx);
-  const currentQuestionId = cpData?.questionId;
-
-  // Assign a new question (different from current), respecting subType for tracing
-  const difficulty = await getTeamDifficulty(teamId);
-  const order = difficulty === 'easy' ? ['easy','medium','hard']
-    : difficulty === 'medium' ? ['medium','easy','hard']
-    : ['hard','medium','easy'];
-
-  const swapFilter = {
-    type: seqEntry.type,
-    usedBy: { $not: { $elemMatch: { $eq: teamId } } },
-    ...(currentQuestionId ? { _id: { $ne: new ObjectId(currentQuestionId) } } : {}),
-    ...(seqEntry.type === 'tracing' && seqEntry.subType ? { subType: seqEntry.subType } : {})
-  };
-
-  let newQ = null;
-  for (const d of order) {
-    const q = await db.collection('questions').findOne({ ...swapFilter, difficulty: d });
-    if (q) { newQ = q; break; }
-  }
-
-  if (!newQ) {
-    return res.status(400).json({ error: 'No alternative question available for swap.' });
-  }
-
-  // Mark new question as used by this team
-  await db.collection('questions').updateOne({ _id: newQ._id }, { $push: { usedBy: teamId } });
-
-  // Release old question from usedBy (if it existed)
-  if (currentQuestionId) {
-    try {
-      await db.collection('questions').updateOne(
-        { _id: new ObjectId(currentQuestionId) },
-        { $pull: { usedBy: teamId } }
-      );
-    } catch(e) { /* ignore */ }
-  }
-
-  // Update checkpoint data with new question
-  const swapKey = `swapsUsedPerCheckpoint.${idx}`;
-  if (cpData) {
-    await db.collection('team_progress').updateOne(
-      { teamId, 'checkpoints.index': idx },
-      {
-        $set: {
-          'checkpoints.$.questionId': newQ._id.toString(),
-          'checkpoints.$.questionCode': newQ.code || null,
-          'checkpoints.$.questionNumber': newQ.questionNumber || null,
-          'checkpoints.$.questionAnswer': newQ.answer || null,
-        }
-      }
-    );
-  } else {
-    // cpData doesn't exist yet — create it
-    const cpMeta = await db.collection('checkpoints').findOne({ label: seqEntry.label });
-    const newCp = {
-      index: idx, type: seqEntry.type, label: seqEntry.label,
-      locationName: cpMeta?.name || seqEntry.label,
-      locationHint: cpMeta?.locationHint || '',
-      questionId: newQ._id.toString(),
-      questionCode: newQ.code || null,
-      questionNumber: newQ.questionNumber || null,
-      questionAnswer: newQ.answer || null,
-      status: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? 'in-progress' : 'pending',
-      timerStartedAt: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? new Date() : null,
-      timerPausedAt: null,
-      timerUsed: 0, submittedAnswer: null, completedAt: null, pointsEarned: 0
-    };
-    await db.collection('team_progress').updateOne({ teamId }, { $push: { checkpoints: newCp } });
-  }
-
-  // Deduct swap
-  await db.collection('team_progress').updateOne(
-    { teamId },
-    {
-      $inc: { swapsRemaining: -1, [swapKey]: 1 }
-    }
-  );
-
-  const updatedProgress = await db.collection('team_progress').findOne({ teamId });
-  res.json({
-    success: true,
-    message: `Question swapped! New code: ${newQ.code}`,
-    newCode: newQ.code,
-    swapsRemaining: updatedProgress.swapsRemaining
-  });
-});
-
-// ─── ADMIN: Grant extra swaps to a team ───────────────────────────────────────
-app.post('/api/admin/teams/:teamId/add-swaps', auth, adminOnly, async (req, res) => {
-  const teamId = parseInt(req.params.teamId);
-  const { amount = 1 } = req.body;
-  const n = parseInt(amount);
-  if (isNaN(n) || n < 1 || n > 10) return res.status(400).json({ error: 'Amount must be 1–10' });
-
-  const result = await db.collection('team_progress').updateOne(
-    { teamId },
-    { $inc: { swapsRemaining: n } }
-  );
-  if (result.matchedCount === 0) return res.status(404).json({ error: 'Team progress not found. Has event started?' });
-
-  const updated = await db.collection('team_progress').findOne({ teamId });
-  res.json({ success: true, swapsRemaining: updated.swapsRemaining });
 });
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────

@@ -1944,9 +1944,6 @@ async function renderTeamDashboard(el, gs, st) {
   }
   document.getElementById('headerPoints').textContent = `${state.totalPoints} pts`;
   const { cpData, seqEntry, completedCheckpoints, sequence, deferredCoding } = state;
-  const swapsRemaining = state.swapsRemaining ?? 3;
-  const swapsUsedHere  = state.swapsUsedAtCurrentCheckpoint ?? 0;
-  const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding' && seqEntry?.type !== 'activity';
   const done = (completedCheckpoints||[]).length;
   const pct  = Math.round((done/10)*100);
   const timerElapsed   = cpData?.timerElapsed || 0;
@@ -1997,14 +1994,6 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card">
         <div class="card-title"><i class="fas fa-search"></i> Answer the Question</div>
         ${qNumCard}
-        ${canSwap ? `
-          <div style="margin-bottom:14px">
-            <button class="btn btn-ghost btn-sm" style="margin-top:0;border-color:rgba(245,158,11,.4);color:var(--yellow)" onclick="swapQuestion()">
-              <i class="fas fa-sync-alt"></i> Swap Question
-              <span style="background:rgba(245,158,11,.15);border-radius:99px;padding:2px 8px;margin-left:4px;font-size:.65rem">${swapsRemaining} left</span>
-            </button>
-            <span style="color:var(--muted);font-size:.75rem;margin-left:10px">1 swap per checkpoint · ${swapsRemaining} total remaining</span>
-          </div>` : swapsRemaining <= 0 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-ban"></i> No swaps remaining</div>` : swapsUsedHere >= 1 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-info-circle"></i> Swap already used for this checkpoint</div>` : ''}
         ${cpData?.status !== 'completed' ? `
           <input class="inp" id="tracingAns" placeholder="Enter your answer here…" style="margin-bottom:12px">
           <div class="err-msg" id="subMsg"></div>
@@ -2036,14 +2025,6 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card">
         <div class="card-title"><i class="fas fa-terminal"></i> Coding Round</div>
         ${qNumCard}
-        ${!timerStarted && canSwap ? `
-          <div style="margin-bottom:14px">
-            <button class="btn btn-ghost btn-sm" style="margin-top:0;border-color:rgba(245,158,11,.4);color:var(--yellow)" onclick="swapQuestion()">
-              <i class="fas fa-sync-alt"></i> Swap Question
-              <span style="background:rgba(245,158,11,.15);border-radius:99px;padding:2px 8px;margin-left:4px;font-size:.65rem">${swapsRemaining} left</span>
-            </button>
-            <span style="color:var(--muted);font-size:.75rem;margin-left:10px">Only before timer starts · ${swapsRemaining} total remaining</span>
-          </div>` : !timerStarted && !canSwap ? (swapsRemaining <= 0 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-ban"></i> No swaps remaining</div>` : swapsUsedHere >= 1 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-info-circle"></i> Swap already used for this checkpoint</div>` : '') : ''}
         ${!timerStarted ? `<div class="alert alert-warn"><i class="fas fa-hourglass-half"></i> Waiting for organizer to start your timer. Show them your code above.</div>` : ''}
         ${timerStarted ? `<div class="timer-ring"><div class="timer-display ${timerClass(timerElapsed)}" id="liveTimer">${fmtTime(timerRemaining)}</div></div>` : ''}
         ${isPaused ? `<div class="alert alert-warn"><i class="fas fa-pause-circle"></i> Timer paused by organizer</div>` : ''}
@@ -2119,12 +2100,6 @@ async function renderTeamDashboard(el, gs, st) {
         <div class="stat-lbl">Checkpoints</div>
       </div>
       <div class="stat-box">
-        <div class="stat-val" style="color:${swapsRemaining>0?'var(--accent)':'var(--red)'}">
-          ${swapsRemaining}
-        </div>
-        <div class="stat-lbl">Swaps Left</div>
-      </div>
-      <div class="stat-box">
         <div class="stat-val" style="color:${(deferredCoding||[]).filter(d=>!d.completed).length>0?'var(--yellow)':'var(--muted)'}">
           ${(deferredCoding||[]).filter(d=>!d.completed).length}
         </div>
@@ -2132,21 +2107,6 @@ async function renderTeamDashboard(el, gs, st) {
       </div>
     </div>
     ${challengeHTML}${mapHTML}${deferredHTML}`;
-}
-
-async function swapQuestion() {
-  if (!confirm('Swap this question for a different one? This uses 1 of your swaps and cannot be undone.')) return;
-  try {
-    const r = await api('POST', '/api/team/swap-question');
-    // Show success briefly then refresh
-    const msgEl = document.getElementById('subMsg');
-    if (msgEl) { msgEl.style.color='var(--green)'; msgEl.textContent = r.message; }
-    setTimeout(()=>renderView('dashboard'), 800);
-  } catch(e) {
-    const msgEl = document.getElementById('subMsg');
-    if (msgEl) { msgEl.style.color='var(--red)'; msgEl.textContent = e.message; }
-    else alert(e.message);
-  }
 }
 
 async function submitAnswer() {
