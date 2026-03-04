@@ -387,6 +387,13 @@ function generateBalancedSequences(teams) {
   const TRACING_LABELS = ['T1', 'T2', 'T3'];
   // Remaining 4 checkpoints for activity (T4, T5, T6, T7)
   const ACTIVITY_LABELS = ['T4', 'T5', 'T6', 'T7'];
+  // Activity types for each checkpoint
+  const ACTIVITY_TYPES = {
+    'T4': { type: 'crossword', displayName: 'Activity 1 - Crossword', sets: 3 },
+    'T5': { type: 'questions', displayName: 'Activity 2 - Questions', sets: 2 },
+    'T6': { type: 'wordpuzzle', displayName: 'Activity 3 - Word Puzzle', sets: 6 },
+    'T7': { type: 'encoding', displayName: 'Activity 4 - Encoding', sets: 3 }
+  };
 
   // Load balancing: track how many teams hit each position
   const stepLoad = {};
@@ -478,11 +485,15 @@ function generateBalancedSequences(teams) {
       const pos = activityPositions[j];
       stepLoad[pos]++;
       const activityLabel = ACTIVITY_LABELS[j];
+      const activityInfo = ACTIVITY_TYPES[activityLabel];
       
       sequence[pos] = {
         type: 'activity',
         label: activityLabel,
         tracingNum: parseInt(activityLabel.substring(1)),
+        activityType: activityInfo.type,
+        activityDisplayName: activityInfo.displayName,
+        activitySets: activityInfo.sets,
         activityAnswer: 'ayush'
       };
     }
