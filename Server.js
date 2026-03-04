@@ -493,8 +493,7 @@ function generateBalancedSequences(teams) {
         tracingNum: parseInt(activityLabel.substring(1)),
         activityType: activityInfo.type,
         activityDisplayName: activityInfo.displayName,
-        activitySets: activityInfo.sets,
-        activityAnswer: 'ayush'
+        activitySets: activityInfo.sets
       };
     }
 
@@ -1324,9 +1323,7 @@ app.get('/api/team/state', auth, async (req, res) => {
       questionId: q?._id?.toString() || null,
       questionCode: q?.code || null,
       questionNumber: q?.questionNumber || null,
-      questionAnswer: seqEntry.type === 'activity' ? (cpMeta?.activityAnswer || 'ayush') : 
-                      seqEntry.type === 'coding' ? (cpMeta?.codingAnswer || 'ayush') :
-                      (q?.answer || null),
+      questionAnswer: seqEntry.type === 'coding' ? (cpMeta?.codingAnswer || 'ayush') : (q?.answer || null),
       // Tracing & activity timer auto-starts when clue/location is first revealed
       status: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? 'in-progress' : 'pending',
       timerStartedAt: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? new Date() : null,
@@ -1413,21 +1410,38 @@ app.post('/api/team/submit', auth, async (req, res) => {
     return res.json({ correct: true, message: `Correct! +${points} points`, points });
   }
 
-  // Activity checkpoints: password set per-location by admin (default 'ayush') — same point rules as tracing
+  // Activity checkpoints: Team marks as "ready for verification", organizer verifies
   if (cpData.type === 'activity') {
-    const correctAnswer = (cpData.questionAnswer || 'ayush').trim().toLowerCase();
-    const correct = answer.trim().toLowerCase() === correctAnswer;
-    if (!correct) return res.json({ correct: false, message: 'Wrong code, try again!' });
+    // Team is marking themselves as ready for organizer verification
     let elapsedSeconds = cpData.timerUsed || 0;
     if (cpData.timerStartedAt && !cpData.timerPausedAt)
       elapsedSeconds += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
-    const points = calcTracingPoints(elapsedSeconds);
+    
     await db.collection('team_progress').updateOne(
       { teamId, 'checkpoints.index': idx },
-      { $set: { 'checkpoints.$.status': 'completed', 'checkpoints.$.completedAt': new Date(), 'checkpoints.$.pointsEarned': points }, $push: { completedCheckpoints: idx }, $inc: { totalPoints: points } }
+      { 
+        $set: { 
+          'checkpoints.$.status': 'pending-verification',
+          'checkpoints.$.readyAt': new Date(),
+          'checkpoints.$.timerUsed': elapsedSeconds
+        } 
+      }
     );
-    await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 } });
-    return res.json({ correct: true, message: `Activity complete! +${points} points. Proceed to next checkpoint!`, points });
+    
+    // Notify activity organizers
+    const team = await db.collection('teams').findOne({ teamId });
+    await sendNotificationToOrganizers(
+      'activity',
+      '✅ Team Ready for Verification',
+      `${team?.name || 'Team ' + teamId} is ready at ${cpData.locationName || seqEntry.label}`,
+      { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId }
+    );
+    
+    return res.json({ 
+      success: true, 
+      message: 'Marked as complete! Waiting for organizer to verify your answers...',
+      status: 'pending-verification'
+    });
   }
 
   if (cpData.type === 'coding') {
@@ -1731,6 +1745,77 @@ app.post('/api/organizer/skip-activity', auth, orgOrAdmin, async (req, res) => {
     points 
   });
 });
+
+// ─── ORGANIZER: Verify Activity Completion ───────────────────────────────────
+app.post('/api/organizer/verify-activity', auth, orgOrAdmin, async (req, res) => {
+  const { teamId, checkpointIndex, correctAnswers, totalQuestions } = req.body;
+  const teamIdInt = parseInt(teamId);
+  const idx = parseInt(checkpointIndex);
+  const correct = parseInt(correctAnswers);
+  const total = parseInt(totalQuestions);
+  
+  if (isNaN(correct) || isNaN(total) || correct < 0 || correct > total) {
+    return res.status(400).json({ error: 'Invalid number of correct answers' });
+  }
+  
+  const progress = await db.collection('team_progress').findOne({ teamId: teamIdInt });
+  if (!progress) return res.status(400).json({ error: 'Team progress not found' });
+  
+  const cpData = progress.checkpoints.find(c => c.index === idx);
+  if (!cpData) return res.status(400).json({ error: 'Checkpoint not found' });
+  
+  // Calculate elapsed time
+  let elapsedSeconds = cpData.timerUsed || 0;
+  if (cpData.timerStartedAt && !cpData.timerPausedAt) {
+    elapsedSeconds += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+  }
+  
+  // Calculate points based on correct answers and time
+  // Base points: 200 max (same as tracing)
+  // Points per question: 200 / totalQuestions
+  // Time penalty: same as tracing (200 pts if ≤2 min; -10/min for min 2-5; -5/min after 5 min)
+  
+  const basePoints = calcTracingPoints(elapsedSeconds); // Time-based points (max 200)
+  const accuracyRatio = correct / total; // Percentage correct
+  const points = Math.round(basePoints * accuracyRatio); // Final points
+  
+  // Update checkpoint
+  await db.collection('team_progress').updateOne(
+    { teamId: teamIdInt, 'checkpoints.index': idx },
+    { 
+      $set: { 
+        'checkpoints.$.status': 'completed',
+        'checkpoints.$.completedAt': new Date(),
+        'checkpoints.$.pointsEarned': points,
+        'checkpoints.$.correctAnswers': correct,
+        'checkpoints.$.totalQuestions': total,
+        'checkpoints.$.timerUsed': elapsedSeconds,
+        'checkpoints.$.verifiedBy': req.user.username
+      } 
+    }
+  );
+  
+  // Move team to next checkpoint
+  await db.collection('team_progress').updateOne(
+    { teamId: teamIdInt },
+    { 
+      $set: { currentIndex: idx + 1 },
+      $push: { completedCheckpoints: idx },
+      $inc: { totalPoints: points }
+    }
+  );
+  
+  const team = await db.collection('teams').findOne({ teamId: teamIdInt });
+  
+  res.json({ 
+    success: true, 
+    message: `Activity verified! Team ${team?.name || teamIdInt} earned ${points} points (${correct}/${total} correct)`,
+    points,
+    correctAnswers: correct,
+    totalQuestions: total
+  });
+});
+
 
 // ─── TEAM: Swap / Regenerate Question ────────────────────────────────────────
 app.post('/api/team/swap-question', auth, async (req, res) => {
