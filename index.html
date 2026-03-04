@@ -1944,6 +1944,9 @@ async function renderTeamDashboard(el, gs, st) {
   }
   document.getElementById('headerPoints').textContent = `${state.totalPoints} pts`;
   const { cpData, seqEntry, completedCheckpoints, sequence, deferredCoding } = state;
+  const swapsRemaining = state.swapsRemaining ?? 3;
+  const swapsUsedHere  = state.swapsUsedAtCurrentCheckpoint ?? 0;
+  const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding' && seqEntry?.type !== 'activity';
   const done = (completedCheckpoints||[]).length;
   const pct  = Math.round((done/10)*100);
   const timerElapsed   = cpData?.timerElapsed || 0;
@@ -1994,6 +1997,14 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card">
         <div class="card-title"><i class="fas fa-search"></i> Answer the Question</div>
         ${qNumCard}
+        ${canSwap ? `
+          <div style="margin-bottom:14px">
+            <button class="btn btn-ghost btn-sm" style="margin-top:0;border-color:rgba(245,158,11,.4);color:var(--yellow)" onclick="swapQuestion()">
+              <i class="fas fa-sync-alt"></i> Swap Question
+              <span style="background:rgba(245,158,11,.15);border-radius:99px;padding:2px 8px;margin-left:4px;font-size:.65rem">${swapsRemaining} left</span>
+            </button>
+            <span style="color:var(--muted);font-size:.75rem;margin-left:10px">1 swap per checkpoint · ${swapsRemaining} total remaining</span>
+          </div>` : swapsRemaining <= 0 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-ban"></i> No swaps remaining</div>` : swapsUsedHere >= 1 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-info-circle"></i> Swap already used for this checkpoint</div>` : ''}
         ${cpData?.status !== 'completed' ? `
           <input class="inp" id="tracingAns" placeholder="Enter your answer here…" style="margin-bottom:12px">
           <div class="err-msg" id="subMsg"></div>
@@ -2025,6 +2036,14 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card">
         <div class="card-title"><i class="fas fa-terminal"></i> Coding Round</div>
         ${qNumCard}
+        ${!timerStarted && canSwap ? `
+          <div style="margin-bottom:14px">
+            <button class="btn btn-ghost btn-sm" style="margin-top:0;border-color:rgba(245,158,11,.4);color:var(--yellow)" onclick="swapQuestion()">
+              <i class="fas fa-sync-alt"></i> Swap Question
+              <span style="background:rgba(245,158,11,.15);border-radius:99px;padding:2px 8px;margin-left:4px;font-size:.65rem">${swapsRemaining} left</span>
+            </button>
+            <span style="color:var(--muted);font-size:.75rem;margin-left:10px">Only before timer starts · ${swapsRemaining} total remaining</span>
+          </div>` : !timerStarted && !canSwap ? (swapsRemaining <= 0 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-ban"></i> No swaps remaining</div>` : swapsUsedHere >= 1 ? `<div class="alert alert-warn" style="margin-bottom:14px;padding:8px 14px;font-size:.82rem"><i class="fas fa-info-circle"></i> Swap already used for this checkpoint</div>` : '') : ''}
         ${!timerStarted ? `<div class="alert alert-warn"><i class="fas fa-hourglass-half"></i> Waiting for organizer to start your timer. Show them your code above.</div>` : ''}
         ${timerStarted ? `<div class="timer-ring"><div class="timer-display ${timerClass(timerElapsed)}" id="liveTimer">${fmtTime(timerRemaining)}</div></div>` : ''}
         ${isPaused ? `<div class="alert alert-warn"><i class="fas fa-pause-circle"></i> Timer paused by organizer</div>` : ''}
@@ -2100,6 +2119,12 @@ async function renderTeamDashboard(el, gs, st) {
         <div class="stat-lbl">Checkpoints</div>
       </div>
       <div class="stat-box">
+        <div class="stat-val" style="color:${swapsRemaining>0?'var(--accent)':'var(--red)'}">
+          ${swapsRemaining}
+        </div>
+        <div class="stat-lbl">Swaps Left</div>
+      </div>
+      <div class="stat-box">
         <div class="stat-val" style="color:${(deferredCoding||[]).filter(d=>!d.completed).length>0?'var(--yellow)':'var(--muted)'}">
           ${(deferredCoding||[]).filter(d=>!d.completed).length}
         </div>
@@ -2107,6 +2132,21 @@ async function renderTeamDashboard(el, gs, st) {
       </div>
     </div>
     ${challengeHTML}${mapHTML}${deferredHTML}`;
+}
+
+async function swapQuestion() {
+  if (!confirm('Swap this question for a different one? This uses 1 of your swaps and cannot be undone.')) return;
+  try {
+    const r = await api('POST', '/api/team/swap-question');
+    // Show success briefly then refresh
+    const msgEl = document.getElementById('subMsg');
+    if (msgEl) { msgEl.style.color='var(--green)'; msgEl.textContent = r.message; }
+    setTimeout(()=>renderView('dashboard'), 800);
+  } catch(e) {
+    const msgEl = document.getElementById('subMsg');
+    if (msgEl) { msgEl.style.color='var(--red)'; msgEl.textContent = e.message; }
+    else alert(e.message);
+  }
 }
 
 async function submitAnswer() {
@@ -2683,12 +2723,12 @@ async function renderOrganizer(el) {
   const codingTeams = await api('GET', '/api/organizer/checkpoint-teams');
   const gs = await api('GET', '/api/game-state');
   el.innerHTML = `
-    <div class="alert alert-info"><i class="fas fa-wrench"></i> Organizer Panel — Start/pause timers and mark coding round completions.</div>
+    <div class="alert alert-info"><i class="fas fa-wrench"></i> Organizer Panel — Manage teams at your assigned checkpoints.</div>
     ${codingTeams.length===0?`
       <div class="card" style="text-align:center;padding:40px">
         <div style="font-size:2.5rem;margin-bottom:12px">⏳</div>
-        <div class="card-title" style="justify-content:center">No teams at coding checkpoints</div>
-        <p style="color:var(--muted)">Teams will appear here when they reach a coding round.</p>
+        <div class="card-title" style="justify-content:center">No teams at your checkpoints</div>
+        <p style="color:var(--muted)">Teams will appear here when they reach your checkpoint type.</p>
       </div>`:''
     }
     ${codingTeams.map(t=>{
@@ -2699,31 +2739,47 @@ async function renderOrganizer(el) {
       const timerStarted=!!cp?.timerStartedAt;
       const timerColor = timerRemaining<60?'var(--red)':timerRemaining<120?'var(--yellow)':'var(--accent)';
       const isActivity = t.seq?.type === 'activity';
+      const isCoding = t.seq?.type === 'coding' || t.seq?.type === 'finalCoding';
+      const isTracing = t.seq?.type === 'tracing';
       const canSkip = t.canSkip || false;
+      const elapsedMinutes = Math.floor(timerElapsed / 60);
+      const elapsedColor = elapsedMinutes >= 20 ? 'var(--red)' : elapsedMinutes >= 15 ? 'var(--yellow)' : 'var(--green)';
+      
       return `<div class="card" style="${t.isDeferred?'border-color:rgba(245,158,11,.4)':''}">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
           <span style="font-weight:700;font-size:1.05rem;font-family:'Rajdhani',sans-serif">${t.name}</span>
           <span class="tag">#${t.teamId}</span>
           ${t.isDeferred?`<span class="deferred-pill">⏭ Deferred</span>`:''}
-          <span class="badge ${isActivity?'badge-activity':'badge-coding'}">${t.seq?.label||''}</span>
+          <span class="badge ${isActivity?'badge-activity':isCoding?'badge-coding':'badge-tracing'}">${t.seq?.label||''}</span>
           <span class="badge ${cp?.status==='submitted'?'badge-ok':cp?.status==='in-progress'?'badge-tracing':'badge-warn'}">${cp?.status||'pending'}</span>
           ${cp?.questionCode?`<span style="font-family:monospace;font-weight:900;color:var(--accent);background:rgba(0,229,255,.08);padding:2px 10px;border-radius:7px;border:1px solid rgba(0,229,255,.25)">${cp.questionCode}</span>`:''}
           ${cp?.questionNumber?`<span style="color:var(--muted);font-size:.82rem">Paper #${cp.questionNumber}</span>`:''}
         </div>
-        ${timerStarted?`
-          <div style="font-family:'Orbitron',monospace;font-size:2.8rem;font-weight:900;color:${timerColor};text-shadow:0 0 20px ${timerColor}40;margin-bottom:12px;letter-spacing:3px">
-            ${fmtTime(timerRemaining)} ${isPaused?'⏸':'▶'}
-          </div>`:`<div class="alert alert-warn"><i class="fas fa-hourglass-start"></i> Timer not started yet</div>`}
-        ${canSkip?`<div class="alert alert-warn" style="margin-bottom:12px"><i class="fas fa-exclamation-triangle"></i> Team stuck for 20+ minutes. Can skip for 50 points.</div>`:''}
-        ${cp?.submittedAnswer?`<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:.85rem"><strong style="color:var(--muted)">Submitted Answer:</strong><br><span style="color:var(--text)">${cp.submittedAnswer}</span></div>`:''}
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${!timerStarted?`<button class="btn btn-primary btn-sm" style="margin-top:0" onclick="orgStartTimer(${t.teamId},${t.currentIndex})"><i class="fas fa-play"></i> Start Timer</button>`:''}
-          ${timerStarted&&!isPaused?`<button class="btn btn-warn btn-sm" style="margin-top:0" onclick="orgTimerControl(${t.teamId},${t.currentIndex},'pause')"><i class="fas fa-pause"></i> Pause</button>`:''}
-          ${timerStarted&&isPaused?`<button class="btn btn-success btn-sm" style="margin-top:0" onclick="orgTimerControl(${t.teamId},${t.currentIndex},'resume')"><i class="fas fa-play"></i> Resume</button>`:''}
-          <button class="btn btn-success btn-sm" style="margin-top:0" onclick="orgMarkStatus(${t.teamId},${t.currentIndex},'completed')"><i class="fas fa-check"></i> Mark Complete</button>
-          <button class="btn btn-ghost btn-sm" style="margin-top:0" onclick="orgMarkStatus(${t.teamId},${t.currentIndex},'waiting')"><i class="fas fa-hourglass-half"></i> Mark Waiting</button>
-          ${isActivity&&canSkip?`<button class="btn btn-warn btn-sm" style="margin-top:0" onclick="orgSkipActivity(${t.teamId},${t.currentIndex})"><i class="fas fa-forward"></i> Skip (50 pts)</button>`:''}
-        </div>
+        
+        ${isActivity ? `
+          ${timerStarted ? `
+            <div style="font-family:'Orbitron',monospace;font-size:2.2rem;font-weight:700;color:${elapsedColor};margin-bottom:12px;letter-spacing:2px">
+              ⏱️ ${elapsedMinutes} min elapsed
+            </div>
+            ${canSkip?`<div class="alert alert-warn" style="margin-bottom:12px"><i class="fas fa-exclamation-triangle"></i> <strong>20+ minutes passed!</strong> Team can be skipped for 50 points.</div>`:`<div class="alert alert-info" style="margin-bottom:12px;padding:8px 14px;font-size:.85rem"><i class="fas fa-info-circle"></i> Skip available after 20 minutes (${Math.max(0, 20 - elapsedMinutes)} min remaining)</div>`}
+          ` : `<div class="alert alert-info"><i class="fas fa-hourglass-start"></i> Activity in progress (timer auto-started)</div>`}
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${canSkip?`<button class="btn btn-warn btn-sm" style="margin-top:0;font-size:1rem;padding:10px 20px" onclick="orgSkipActivity(${t.teamId},${t.currentIndex})"><i class="fas fa-forward"></i> Skip & Award 50 Points</button>`:''}
+          </div>
+        ` : `
+          ${timerStarted?`
+            <div style="font-family:'Orbitron',monospace;font-size:2.8rem;font-weight:900;color:${timerColor};text-shadow:0 0 20px ${timerColor}40;margin-bottom:12px;letter-spacing:3px">
+              ${fmtTime(timerRemaining)} ${isPaused?'⏸':'▶'}
+            </div>`:`<div class="alert alert-warn"><i class="fas fa-hourglass-start"></i> Timer not started yet</div>`}
+          ${cp?.submittedAnswer?`<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:.85rem"><strong style="color:var(--muted)">Submitted Answer:</strong><br><span style="color:var(--text)">${cp.submittedAnswer}</span></div>`:''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${!timerStarted?`<button class="btn btn-primary btn-sm" style="margin-top:0" onclick="orgStartTimer(${t.teamId},${t.currentIndex})"><i class="fas fa-play"></i> Start Timer</button>`:''}
+            ${timerStarted&&!isPaused?`<button class="btn btn-warn btn-sm" style="margin-top:0" onclick="orgTimerControl(${t.teamId},${t.currentIndex},'pause')"><i class="fas fa-pause"></i> Pause</button>`:''}
+            ${timerStarted&&isPaused?`<button class="btn btn-success btn-sm" style="margin-top:0" onclick="orgTimerControl(${t.teamId},${t.currentIndex},'resume')"><i class="fas fa-play"></i> Resume</button>`:''}
+            <button class="btn btn-success btn-sm" style="margin-top:0" onclick="orgMarkStatus(${t.teamId},${t.currentIndex},'completed')"><i class="fas fa-check"></i> Mark Complete</button>
+            <button class="btn btn-ghost btn-sm" style="margin-top:0" onclick="orgMarkStatus(${t.teamId},${t.currentIndex},'waiting')"><i class="fas fa-hourglass-half"></i> Mark Waiting</button>
+          </div>
+        `}
       </div>`;
     }).join('')}
     ${gs.finalCodingStarted?`<div class="card" style="border-color:rgba(245,158,11,.3)"><div class="card-title" style="color:var(--yellow)"><i class="fas fa-flag-checkered"></i> Final Round Active</div><p style="color:var(--muted);font-size:.88rem">Use admin login to mark final round completions.</p></div>`:``}`;
