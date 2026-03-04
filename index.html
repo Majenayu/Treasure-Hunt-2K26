@@ -2719,7 +2719,7 @@ async function renderAdminProgress(el) {
    ORGANIZER PANEL
    ============================================= */
 async function renderOrganizer(el) {
-  const codingTeams = await api('GET', '/api/organizer/coding-teams');
+  const codingTeams = await api('GET', '/api/organizer/checkpoint-teams');
   const gs = await api('GET', '/api/game-state');
   el.innerHTML = `
     <div class="alert alert-info"><i class="fas fa-wrench"></i> Organizer Panel — Start/pause timers and mark coding round completions.</div>
