@@ -1500,18 +1500,41 @@ function setHeaderUser(d) {
 async function api(method, endpoint, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json', 'Authorization': token || '' } };
   if (body !== undefined) opts.body = JSON.stringify(body);
-  const r = await fetch(endpoint, opts);
-  const data = await r.json();
-  if (r.status === 401) {
-    sessionStorage.clear(); token = null; userRole = null; userTeamId = null;
-    stopPolling();
-    document.getElementById('app').classList.add('hidden');
-    document.getElementById('loginPage').classList.remove('hidden');
-    document.getElementById('loginErr').textContent = '⚠️ Session expired. Please log in again.';
-    throw new Error('Session expired');
+  
+  try {
+    const r = await fetch(endpoint, opts);
+    
+    // Handle server errors (502, 503, etc.) that don't return JSON
+    if (r.status >= 500) {
+      throw new Error(`Server error (${r.status}). Please try again.`);
+    }
+    
+    // Try to parse JSON response
+    let data;
+    try {
+      data = await r.json();
+    } catch (jsonError) {
+      throw new Error(`Invalid server response. Please refresh the page.`);
+    }
+    
+    if (r.status === 401) {
+      sessionStorage.clear(); token = null; userRole = null; userTeamId = null;
+      stopPolling();
+      document.getElementById('app').classList.add('hidden');
+      document.getElementById('loginPage').classList.remove('hidden');
+      document.getElementById('loginErr').textContent = '⚠️ Session expired. Please log in again.';
+      throw new Error('Session expired');
+    }
+    
+    if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+    return data;
+  } catch (error) {
+    // Network errors or fetch failures
+    if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+      throw new Error('Network error. Check your connection.');
+    }
+    throw error;
   }
-  if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
-  return data;
 }
 
 /* LOGIN */
