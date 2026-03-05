@@ -1244,6 +1244,9 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
 
+  // Reset all questions' usedBy array for fresh start
+  await db.collection('questions').updateMany({}, { $set: { usedBy: [] } });
+
   // Stagger team starts to avoid more than 8 teams at same checkpoint
   // Shuffle team order for staggered starts
   const shuffledTeamIndices = teams.map((_, idx) => idx);
@@ -1267,20 +1270,24 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
     // Assign starting checkpoint (cycle through available starts)
     const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
     
-    if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
-      await db.collection('team_progress').insertOne({
-        teamId: team.teamId,
-        sequence: sequence,
-        currentIndex: startCheckpoint,
-        checkpoints: [],
-        completedCheckpoints: [],
-        totalPoints: 0,
-        startTime: now,
-        deferredCoding: [],
-        swapsRemaining: 3,
-        swapsUsedPerCheckpoint: {}
-      });
-    }
+    // Use updateOne with upsert to either update existing or create new
+    await db.collection('team_progress').updateOne(
+      { teamId: team.teamId },
+      { 
+        $set: {
+          sequence: sequence,
+          currentIndex: startCheckpoint,
+          checkpoints: [],
+          completedCheckpoints: [],
+          totalPoints: 0,
+          startTime: now,
+          deferredCoding: [],
+          swapsRemaining: 3,
+          swapsUsedPerCheckpoint: {}
+        }
+      },
+      { upsert: true }
+    );
   }
   await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: true, startTime: now } });
   res.json({ success: true });
