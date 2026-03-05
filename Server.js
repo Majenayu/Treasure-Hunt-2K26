@@ -586,7 +586,7 @@ async function getTeamDifficulty(teamId) {
 
 async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null) {
   if (isFinal) {
-    // Final round: assign one of the 10 final questions by cycling teamId
+    // Final round: assign one of the final questions by cycling teamId
     const finalQs = await db.collection('questions')
       .find({ type: 'finalCoding' })
       .sort({ questionNumber: 1 })
@@ -602,46 +602,120 @@ async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null
     if (!team) return null;
     
     const difficultyMix = getTeamDifficultyMix(team);
-    const targetDifficulty = difficultyMix[tracingIndex]; // Get difficulty for this specific tracing checkpoint
+    const targetDifficulty = difficultyMix[tracingIndex];
     
-    // Find a question of the target difficulty that hasn't been used by this team
-    const q = await db.collection('questions').findOne({
-      type: 'tracing',
-      difficulty: targetDifficulty,
-      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
-    });
+    // Get all questions of target difficulty
+    const allQuestions = await db.collection('questions')
+      .find({ type: 'tracing', difficulty: targetDifficulty })
+      .toArray();
     
-    if (q) {
-      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
-      return q;
-    }
-    
-    // Fallback: try any difficulty if target not available
-    const fallbackDifficulties = ['easy', 'medium', 'hard'].filter(d => d !== targetDifficulty);
-    for (const d of fallbackDifficulties) {
-      const fallbackQ = await db.collection('questions').findOne({
-        type: 'tracing',
-        difficulty: d,
-        usedBy: { $not: { $elemMatch: { $eq: teamId } } }
-      });
-      if (fallbackQ) {
-        await db.collection('questions').updateOne({ _id: fallbackQ._id }, { $push: { usedBy: teamId } });
-        return fallbackQ;
+    if (allQuestions.length === 0) {
+      // Fallback to any difficulty
+      const fallbackDifficulties = ['easy', 'medium', 'hard'].filter(d => d !== targetDifficulty);
+      for (const d of fallbackDifficulties) {
+        const fallbackQs = await db.collection('questions')
+          .find({ type: 'tracing', difficulty: d })
+          .toArray();
+        if (fallbackQs.length > 0) {
+          allQuestions.push(...fallbackQs);
+          break;
+        }
       }
     }
+    
+    if (allQuestions.length === 0) return null;
+    
+    // Filter out questions already used by this team
+    const unusedByTeam = allQuestions.filter(q => !(q.usedBy || []).includes(teamId));
+    
+    // If team has used all questions, allow reuse but pick least recently used
+    const questionsToChooseFrom = unusedByTeam.length > 0 ? unusedByTeam : allQuestions;
+    
+    // Get questions currently in use by other teams at same checkpoint (to avoid duplicates)
+    const teamsAtSameCheckpoint = await db.collection('team_progress')
+      .find({ 
+        currentIndex: { $exists: true },
+        'sequence.type': 'tracing'
+      })
+      .toArray();
+    
+    const questionsInUse = new Set();
+    for (const tp of teamsAtSameCheckpoint) {
+      const currentSeq = tp.sequence?.[tp.currentIndex];
+      if (currentSeq?.type === 'tracing' && currentSeq?.tracingIndex === tracingIndex) {
+        const cp = tp.checkpoints?.find(c => c.index === tp.currentIndex);
+        if (cp?.questionId && cp?.status === 'in-progress') {
+          questionsInUse.add(cp.questionId.toString());
+        }
+      }
+    }
+    
+    // Prefer questions not currently in use
+    const availableQuestions = questionsToChooseFrom.filter(q => !questionsInUse.has(q._id.toString()));
+    const finalPool = availableQuestions.length > 0 ? availableQuestions : questionsToChooseFrom;
+    
+    // Randomize selection using team ID as seed for consistency
+    const randomIndex = (teamId * 7919 + tracingIndex * 1009) % finalPool.length;
+    const selectedQuestion = finalPool[randomIndex];
+    
+    // Mark as used by this team
+    await db.collection('questions').updateOne(
+      { _id: selectedQuestion._id },
+      { $addToSet: { usedBy: teamId } }
+    );
+    
+    return selectedQuestion;
   }
   
-  // For coding questions - assign from easy coding questions pool
+  // For coding questions - assign from coding questions pool
   if (type === 'coding') {
-    const q = await db.collection('questions').findOne({
-      type: 'coding',
-      difficulty: 'easy',
-      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
-    });
-    if (q) {
-      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
-      return q;
+    // Get all coding questions
+    const allQuestions = await db.collection('questions')
+      .find({ type: 'coding', difficulty: 'easy' })
+      .toArray();
+    
+    if (allQuestions.length === 0) return null;
+    
+    // Filter out questions already used by this team
+    const unusedByTeam = allQuestions.filter(q => !(q.usedBy || []).includes(teamId));
+    
+    // If team has used all questions, allow reuse
+    const questionsToChooseFrom = unusedByTeam.length > 0 ? unusedByTeam : allQuestions;
+    
+    // Get questions currently in use by other teams at coding checkpoints
+    const teamsAtCoding = await db.collection('team_progress')
+      .find({ 
+        currentIndex: { $exists: true },
+        'sequence.type': 'coding'
+      })
+      .toArray();
+    
+    const questionsInUse = new Set();
+    for (const tp of teamsAtCoding) {
+      const currentSeq = tp.sequence?.[tp.currentIndex];
+      if (currentSeq?.type === 'coding') {
+        const cp = tp.checkpoints?.find(c => c.index === tp.currentIndex);
+        if (cp?.questionId && (cp?.status === 'pending' || cp?.status === 'in-progress')) {
+          questionsInUse.add(cp.questionId.toString());
+        }
+      }
     }
+    
+    // Prefer questions not currently in use
+    const availableQuestions = questionsToChooseFrom.filter(q => !questionsInUse.has(q._id.toString()));
+    const finalPool = availableQuestions.length > 0 ? availableQuestions : questionsToChooseFrom;
+    
+    // Randomize selection using team ID as seed
+    const randomIndex = (teamId * 8191) % finalPool.length;
+    const selectedQuestion = finalPool[randomIndex];
+    
+    // Mark as used by this team
+    await db.collection('questions').updateOne(
+      { _id: selectedQuestion._id },
+      { $addToSet: { usedBy: teamId } }
+    );
+    
+    return selectedQuestion;
   }
   
   return null;
