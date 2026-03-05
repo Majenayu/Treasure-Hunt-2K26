@@ -2027,13 +2027,17 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card" style="border-color:rgba(74,222,128,.35)">
         <div class="card-title" style="color:var(--green)"><i class="fas fa-running"></i> Activity Checkpoint</div>
         <div style="background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.9rem;color:var(--text)">
-          🎯 Complete the activity at this location, then enter the <strong style="color:var(--green)">secret code</strong> given by the volunteer to proceed.
+          🎯 Complete the activity at this location, then click <strong style="color:var(--green)">Submit</strong> when done.
         </div>
-        ${cpData?.status !== 'completed' ? `
-          <input class="inp" id="tracingAns" placeholder="Enter the activity code here…" style="margin-bottom:12px;border-color:rgba(74,222,128,.4)">
-          <div class="err-msg" id="subMsg"></div>
-          <button class="btn btn-primary btn-sm" style="margin-top:8px;background:rgba(74,222,128,.2);border-color:rgba(74,222,128,.5);color:var(--green)" onclick="submitAnswer()"><i class="fas fa-check"></i> Submit Code</button>
-        ` : `<div class="alert alert-success"><i class="fas fa-check-circle"></i> Activity completed! +${cpData?.pointsEarned||0} pts</div>`}
+        ${cpData?.status === 'pending-verification' ? `
+          <div class="alert alert-info" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.3)">
+            <i class="fas fa-hourglass-half"></i> <strong>Waiting for verification...</strong><br>
+            <span style="font-size:.85rem;color:var(--muted)">The organizer is checking your answers. Please wait.</span>
+          </div>
+        ` : cpData?.status !== 'completed' ? `
+          <button class="btn btn-primary btn-sm" style="margin-top:8px;background:rgba(74,222,128,.2);border-color:rgba(74,222,128,.5);color:var(--green);width:100%;font-size:1.1rem;padding:12px" onclick="submitAnswer()"><i class="fas fa-check"></i> Submit for Verification</button>
+          <div class="err-msg" id="subMsg" style="margin-top:8px"></div>
+        ` : `<div class="alert alert-success"><i class="fas fa-check-circle"></i> Activity completed! +${cpData?.pointsEarned||0} pts (${cpData?.correctAnswers||0}/${cpData?.totalQuestions||0} correct)</div>`}
       </div>`;
 
   } else if (seqEntry?.type === 'coding') {

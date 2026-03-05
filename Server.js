@@ -1438,7 +1438,8 @@ app.post('/api/team/submit', auth, async (req, res) => {
         $set: { 
           'checkpoints.$.status': 'pending-verification',
           'checkpoints.$.readyAt': new Date(),
-          'checkpoints.$.timerUsed': elapsedSeconds
+          'checkpoints.$.timerUsed': elapsedSeconds,
+          'checkpoints.$.timerPausedAt': new Date() // STOP the timer
         } 
       }
     );
@@ -1456,7 +1457,7 @@ app.post('/api/team/submit', auth, async (req, res) => {
     
     return res.json({ 
       success: true, 
-      message: 'Marked as complete! Waiting for organizer to verify your answers...',
+      message: 'Submitted! Waiting for organizer to check your answers and award points...',
       status: 'pending-verification'
     });
   }
@@ -1622,7 +1623,13 @@ app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) =>
     // Calculate if team can skip (only for activity checkpoints)
     let canSkip = false;
     if (seq.type === 'activity' && cpData && cpData.timerStartedAt) {
-      const elapsedMinutes = (Date.now() - new Date(cpData.timerStartedAt).getTime()) / (1000 * 60);
+      // Calculate elapsed time considering paused state
+      let elapsedSeconds = cpData.timerUsed || 0;
+      if (!cpData.timerPausedAt) {
+        // Timer is running, add current elapsed time
+        elapsedSeconds += (Date.now() - new Date(cpData.timerStartedAt).getTime()) / 1000;
+      }
+      const elapsedMinutes = elapsedSeconds / 60;
       canSkip = elapsedMinutes >= 20;
     }
     
