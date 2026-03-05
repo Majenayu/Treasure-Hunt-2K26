@@ -1235,12 +1235,17 @@ app.get('/api/admin/progress', auth, adminOnly, async (req, res) => {
 // ─── ADMIN: Event Control ─────────────────────────────────────────────────────
 app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const gs = await db.collection('game_state').findOne({ key: 'main' });
-  if (gs.started) return res.json({ success: true, message: 'Already started' });
+  if (gs?.started) return res.json({ success: true, message: 'Already started' });
 
   // Only use registered teams (deduplicated)
   const allTeams = await db.collection('teams').find({}).sort({ teamId: 1 }).toArray();
   const seen = new Set();
   const teams = allTeams.filter(t => { if (seen.has(t.teamId)) return false; seen.add(t.teamId); return true; });
+  
+  if (teams.length === 0) {
+    return res.status(400).json({ error: 'No teams registered yet' });
+  }
+  
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
 
@@ -1294,10 +1299,32 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
 });
 
 app.post('/api/admin/reset-event', auth, adminOnly, async (req, res) => {
-  await db.collection('team_progress').deleteMany({});
+  // Delete all team progress (but keep team registrations)
+  const progressDeleted = await db.collection('team_progress').deleteMany({});
+  
+  // Reset all questions' usedBy arrays
   await db.collection('questions').updateMany({}, { $set: { usedBy: [] } });
-  await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: false, startTime: null, finalCodingStarted: false, finalCodingStartTime: null } });
-  res.json({ success: true });
+  
+  // Reset game state completely
+  await db.collection('game_state').updateOne(
+    { key: 'main' }, 
+    { 
+      $set: { 
+        started: false, 
+        startTime: null, 
+        finalCodingStarted: false, 
+        finalCodingStartTime: null,
+        paused: false,
+        pausedAt: null
+      } 
+    },
+    { upsert: true }
+  );
+  
+  res.json({ 
+    success: true, 
+    message: `Reset complete. Deleted ${progressDeleted.deletedCount} team progress records. Team registrations preserved.` 
+  });
 });
 
 app.post('/api/admin/final-coding-start', auth, adminOnly, async (req, res) => {
