@@ -1265,37 +1265,55 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const TEAMS_PER_WAVE = 8;
   const checkpointStarts = [0, 1, 2, 3, 4, 5, 6, 7]; // Can start at any of first 8 checkpoints (not final)
   
+  let createdCount = 0;
+  let updatedCount = 0;
+  
   for (let i = 0; i < teams.length; i++) {
     const teamIndex = shuffledTeamIndices[i];
     const team = teams[teamIndex];
     const sequence = sequences[teamIndex];
+    
+    if (!team || !team.teamId) {
+      console.error(`Invalid team at index ${i}, teamIndex ${teamIndex}`);
+      continue;
+    }
     
     // Calculate which wave this team is in
     const waveNumber = Math.floor(i / TEAMS_PER_WAVE);
     // Assign starting checkpoint (cycle through available starts)
     const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
     
-    // Use updateOne with upsert to either update existing or create new
-    await db.collection('team_progress').updateOne(
-      { teamId: team.teamId },
-      { 
-        $set: {
-          sequence: sequence,
-          currentIndex: startCheckpoint,
-          checkpoints: [],
-          completedCheckpoints: [],
-          totalPoints: 0,
-          startTime: now,
-          deferredCoding: [],
-          swapsRemaining: 3,
-          swapsUsedPerCheckpoint: {}
-        }
-      },
-      { upsert: true }
-    );
+    try {
+      // Use updateOne with upsert to either update existing or create new
+      const result = await db.collection('team_progress').updateOne(
+        { teamId: team.teamId },
+        { 
+          $set: {
+            sequence: sequence,
+            currentIndex: startCheckpoint,
+            checkpoints: [],
+            completedCheckpoints: [],
+            totalPoints: 0,
+            startTime: now,
+            deferredCoding: [],
+            swapsRemaining: 3,
+            swapsUsedPerCheckpoint: {}
+          }
+        },
+        { upsert: true }
+      );
+      
+      if (result.upsertedCount > 0) createdCount++;
+      if (result.modifiedCount > 0) updatedCount++;
+    } catch (err) {
+      console.error(`Error creating progress for team ${team.teamId}:`, err);
+    }
   }
+  
   await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: true, startTime: now } });
-  res.json({ success: true });
+  
+  console.log(`Event started: ${createdCount} teams created, ${updatedCount} teams updated`);
+  res.json({ success: true, message: `Event started! ${createdCount} new teams, ${updatedCount} updated teams.` });
 });
 
 app.post('/api/admin/reset-event', auth, adminOnly, async (req, res) => {
@@ -1418,8 +1436,38 @@ app.get('/api/team/state', auth, async (req, res) => {
   }
   
   if (!gs.started) return res.json({ gameStarted: false });
+  
   let progress = await db.collection('team_progress').findOne({ teamId });
-  if (!progress) return res.json({ gameStarted: true, noProgress: true });
+  
+  // If progress doesn't exist but event has started, auto-create it for this team
+  if (!progress) {
+    const team = await db.collection('teams').findOne({ teamId });
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found. Please contact admin.' });
+    }
+    
+    // Generate sequence for this team
+    const sequences = generateBalancedSequences([team]);
+    const sequence = sequences[0];
+    
+    // Create progress record with starting checkpoint 0
+    await db.collection('team_progress').insertOne({
+      teamId: team.teamId,
+      sequence: sequence,
+      currentIndex: 0,
+      checkpoints: [],
+      completedCheckpoints: [],
+      totalPoints: 0,
+      startTime: new Date(),
+      deferredCoding: [],
+      swapsRemaining: 3,
+      swapsUsedPerCheckpoint: {}
+    });
+    
+    // Fetch the newly created progress
+    progress = await db.collection('team_progress').findOne({ teamId });
+  }
+  
   const idx = progress.currentIndex;
   if (idx >= 10) return res.json({ gameStarted: true, finished: true, totalPoints: progress.totalPoints, completedCheckpoints: progress.completedCheckpoints });
 

@@ -1916,7 +1916,11 @@ async function renderTeamDashboard(el, gs, st) {
     return;
   }
   
-  if (state.noProgress) { el.innerHTML = `<div class="card"><p style="color:var(--muted)">Your team data is not ready yet. Please wait.</p></div>`; return; }
+  if (state.noProgress) { 
+    const msg = state.message || 'Your team data is not ready yet. Please wait or refresh the page.';
+    el.innerHTML = `<div class="card"><p style="color:var(--muted)">${msg}</p></div>`; 
+    return; 
+  }
   
   // Check if final checkpoint is locked
   if (state.finalLocked) {
