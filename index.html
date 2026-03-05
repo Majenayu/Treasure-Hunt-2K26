@@ -2778,6 +2778,37 @@ async function renderOrganizer(el) {
             </div>
             ${canSkip?`<div class="alert alert-warn" style="margin-bottom:12px"><i class="fas fa-exclamation-triangle"></i> <strong>20+ minutes passed!</strong> Team can be skipped for 50 points.</div>`:`<div class="alert alert-info" style="margin-bottom:12px;padding:8px 14px;font-size:.85rem"><i class="fas fa-info-circle"></i> Skip available after 20 minutes (${Math.max(0, 20 - elapsedMinutes)} min remaining)</div>`}
           ` : `<div class="alert alert-info"><i class="fas fa-hourglass-start"></i> Activity in progress (timer auto-started)</div>`}
+          
+          ${cp?.status === 'pending-verification' ? `
+            <div class="alert alert-success" style="margin-bottom:12px">
+              <i class="fas fa-check-circle"></i> <strong>Team is ready for verification!</strong> Check their answers and enter the results below.
+            </div>
+          ` : ''}
+          
+          <div style="background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);border-radius:9px;padding:16px;margin-bottom:12px">
+            <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;font-weight:600">
+              <i class="fas fa-clipboard-check"></i> Verify Activity Completion
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label style="display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px">Correct Answers</label>
+                <input type="number" id="correct_${t.teamId}_${t.currentIndex}" min="0" max="20" 
+                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center" 
+                  placeholder="0" value="">
+              </div>
+              <div>
+                <label style="display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px">Total Questions</label>
+                <input type="number" id="total_${t.teamId}_${t.currentIndex}" min="1" max="20" 
+                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center" 
+                  placeholder="10" value="${t.seq?.activitySets || 10}">
+              </div>
+            </div>
+            <button class="btn btn-success btn-sm" style="width:100%;margin-top:0;font-size:1rem;padding:10px" 
+              onclick="orgVerifyActivity(${t.teamId},${t.currentIndex})">
+              <i class="fas fa-check-double"></i> Verify & Award Points
+            </button>
+          </div>
+          
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${canSkip?`<button class="btn btn-warn btn-sm" style="margin-top:0;font-size:1rem;padding:10px 20px" onclick="orgSkipActivity(${t.teamId},${t.currentIndex})"><i class="fas fa-forward"></i> Skip & Award 50 Points</button>`:''}
           </div>
@@ -2817,6 +2848,47 @@ async function orgTimerControl(teamId,idx,action){ try{await api('POST','/api/or
 async function orgMarkStatus(teamId,idx,status){
   if(status==='completed'&&!confirm(`Mark Team ${teamId} complete for checkpoint ${idx+1}? Points will be awarded.`))return;
   try{ const r=await api('POST','/api/organizer/mark-status',{teamId,checkpointIndex:idx,status}); if(r.points)alert(`✅ +${r.points} points awarded.`); renderView('organizer'); }catch(e){alert(e.message);}
+}
+async function orgVerifyActivity(teamId,idx){
+  const correctInput = document.getElementById(`correct_${teamId}_${idx}`);
+  const totalInput = document.getElementById(`total_${teamId}_${idx}`);
+  
+  const correct = parseInt(correctInput?.value || 0);
+  const total = parseInt(totalInput?.value || 10);
+  
+  if (isNaN(correct) || correct < 0) {
+    alert('Please enter the number of correct answers (0 or more)');
+    correctInput?.focus();
+    return;
+  }
+  
+  if (isNaN(total) || total < 1) {
+    alert('Please enter the total number of questions (1 or more)');
+    totalInput?.focus();
+    return;
+  }
+  
+  if (correct > total) {
+    alert(`Correct answers (${correct}) cannot be more than total questions (${total})`);
+    correctInput?.focus();
+    return;
+  }
+  
+  if (!confirm(`Verify Team ${teamId}?\n\nCorrect: ${correct}/${total}\n\nPoints will be calculated and awarded.`)) return;
+  
+  try {
+    const r = await api('POST', '/api/organizer/verify-activity', {
+      teamId,
+      checkpointIndex: idx,
+      correctAnswers: correct,
+      totalQuestions: total
+    });
+    
+    alert(r.message || `✅ Activity verified! ${r.points} points awarded.`);
+    renderView('organizer');
+  } catch(e) {
+    alert(`Error: ${e.message}`);
+  }
 }
 async function orgSkipActivity(teamId,idx){
   if(!confirm(`Skip activity for Team ${teamId}? They will get 50 points and move to next checkpoint.`))return;
