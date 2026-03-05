@@ -75,6 +75,7 @@ async function setSession(token, data) {
     teamId: data.teamId || null, 
     username: data.username || null,
     checkpointType: data.checkpointType || null,
+    checkpointLabel: data.checkpointLabel || null,
     createdAt: new Date(), 
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
   });
@@ -317,7 +318,8 @@ function auth(req, res, next) {
       role: session.role, 
       teamId: session.teamId, 
       username: session.username,
-      checkpointType: session.checkpointType || null
+      checkpointType: session.checkpointType || null,
+      checkpointLabel: session.checkpointLabel || null
     };
     next();
   }).catch(() => res.status(500).json({ error: 'Auth error' }));
@@ -658,17 +660,17 @@ app.post('/api/login', async (req, res) => {
       return res.json({ token, role: 'admin' });
     }
 
-    // Organizer accounts for different checkpoint types
+    // Organizer accounts for specific checkpoints
     const organizerAccounts = [
-      { username: 'tracing1', role: 'organizer', checkpointType: 'tracing' },
-      { username: 'tracing2', role: 'organizer', checkpointType: 'tracing' },
-      { username: 'tracing3', role: 'organizer', checkpointType: 'tracing' },
-      { username: 'coding1', role: 'organizer', checkpointType: 'coding' },
-      { username: 'coding2', role: 'organizer', checkpointType: 'coding' },
-      { username: 'activity1', role: 'organizer', checkpointType: 'activity' },
-      { username: 'activity2', role: 'organizer', checkpointType: 'activity' },
-      { username: 'activity3', role: 'organizer', checkpointType: 'activity' },
-      { username: 'activity4', role: 'organizer', checkpointType: 'activity' },
+      { username: 'tracing1', role: 'organizer', checkpointType: 'tracing', checkpointLabel: 'T1' },
+      { username: 'tracing2', role: 'organizer', checkpointType: 'tracing', checkpointLabel: 'T2' },
+      { username: 'tracing3', role: 'organizer', checkpointType: 'tracing', checkpointLabel: 'T3' },
+      { username: 'coding1', role: 'organizer', checkpointType: 'coding', checkpointLabel: 'C1' },
+      { username: 'coding2', role: 'organizer', checkpointType: 'coding', checkpointLabel: 'C2' },
+      { username: 'activity1', role: 'organizer', checkpointType: 'activity', checkpointLabel: 'T4' },
+      { username: 'activity2', role: 'organizer', checkpointType: 'activity', checkpointLabel: 'T5' },
+      { username: 'activity3', role: 'organizer', checkpointType: 'activity', checkpointLabel: 'T6' },
+      { username: 'activity4', role: 'organizer', checkpointType: 'activity', checkpointLabel: 'T7' },
     ];
 
     const organizerAccount = organizerAccounts.find(acc => acc.username === username);
@@ -677,12 +679,14 @@ app.post('/api/login', async (req, res) => {
       await setSession(token, { 
         role: 'organizer', 
         username: organizerAccount.username,
-        checkpointType: organizerAccount.checkpointType 
+        checkpointType: organizerAccount.checkpointType,
+        checkpointLabel: organizerAccount.checkpointLabel 
       });
       return res.json({ 
         token, 
         role: 'organizer',
-        checkpointType: organizerAccount.checkpointType 
+        checkpointType: organizerAccount.checkpointType,
+        checkpointLabel: organizerAccount.checkpointLabel 
       });
     }
 
@@ -782,7 +786,8 @@ app.get('/api/me', auth, (req, res) => {
     role: req.user.role, 
     teamId: req.user.teamId, 
     username: req.user.username,
-    checkpointType: req.user.checkpointType || null
+    checkpointType: req.user.checkpointType || null,
+    checkpointLabel: req.user.checkpointLabel || null
   });
 });
 
@@ -821,6 +826,7 @@ app.post('/api/subscribe-notifications', auth, async (req, res) => {
           subscription,
           role: req.user.role,
           checkpointType: req.user.checkpointType,
+          checkpointLabel: req.user.checkpointLabel,
           teamId: req.user.teamId || null,
           updatedAt: new Date() 
         } 
@@ -849,16 +855,22 @@ app.post('/api/unsubscribe-notifications', auth, async (req, res) => {
   }
 });
 
-// Helper function to send notifications
-async function sendNotificationToOrganizers(checkpointType, title, body, data = {}) {
+// Helper function to send notifications to specific checkpoint organizers
+async function sendNotificationToOrganizers(checkpointType, title, body, data = {}, checkpointLabel = null) {
   if (!notificationsEnabled) {
     console.log('📢 Notification skipped (VAPID not configured):', title);
     return;
   }
   
   try {
+    // Build query - filter by checkpoint type and optionally by specific label
+    const query = { role: 'organizer', checkpointType };
+    if (checkpointLabel) {
+      query.checkpointLabel = checkpointLabel;
+    }
+    
     const subscriptions = await db.collection('push_subscriptions')
-      .find({ role: 'organizer', checkpointType })
+      .find(query)
       .toArray();
     
     const payload = JSON.stringify({
@@ -1351,13 +1363,14 @@ app.get('/api/team/state', auth, async (req, res) => {
         { $set: { 'checkpoints.$.notified20Min': true } }
       );
       
-      // Send notification to activity organizers
+      // Send notification to specific activity organizer for this checkpoint
       const team = await db.collection('teams').findOne({ teamId });
       await sendNotificationToOrganizers(
         'activity',
         '⏰ Team Stuck Alert',
         `${team?.name || 'Team ' + teamId} has been at ${cpData.locationName || seqEntry.label} for over 20 minutes!`,
-        { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId }
+        { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId },
+        seqEntry.label // Send to specific checkpoint organizer (e.g., T4, T5, T6, T7)
       );
     }
   }
@@ -1430,13 +1443,15 @@ app.post('/api/team/submit', auth, async (req, res) => {
       }
     );
     
-    // Notify activity organizers
+    // Notify specific activity organizer for this checkpoint
     const team = await db.collection('teams').findOne({ teamId });
+    const seqEntry = progress.sequence[idx];
     await sendNotificationToOrganizers(
       'activity',
       '✅ Team Ready for Verification',
       `${team?.name || 'Team ' + teamId} is ready at ${cpData.locationName || seqEntry.label}`,
-      { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId }
+      { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId },
+      seqEntry.label // Send to specific checkpoint organizer (e.g., T4, T5, T6, T7)
     );
     
     return res.json({ 
@@ -1493,13 +1508,14 @@ app.post('/api/team/defer-coding', auth, async (req, res) => {
   await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': idx }, { $set: { 'checkpoints.$.status': 'deferred' } });
   await db.collection('team_progress').updateOne({ teamId }, { $set: { currentIndex: idx + 1 }, $push: { deferredCoding: { originalIndex: idx, label: seqEntry.label, deferredAt: new Date(), completed: false } } });
   
-  // Send notification to coding organizers
+  // Send notification to specific coding organizer for this checkpoint
   const team = await db.collection('teams').findOne({ teamId });
   await sendNotificationToOrganizers(
     'coding',
     '⏭️ Coding Deferred',
     `${team?.name || 'Team ' + teamId} has deferred ${seqEntry.label} coding checkpoint`,
-    { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId, action: 'deferred' }
+    { teamId, checkpointIndex: idx, teamName: team?.name || 'Team ' + teamId, action: 'deferred' },
+    seqEntry.label // Send to specific checkpoint organizer (C1 or C2)
   );
   
   res.json({ success: true, message: 'Coding round deferred. Complete it before the final checkpoint!' });
@@ -1518,23 +1534,25 @@ app.post('/api/team/activate-deferred', auth, async (req, res) => {
     await db.collection('team_progress').updateOne({ teamId, 'checkpoints.index': originalIndex }, { $set: { 'checkpoints.$.status': 'pending', 'checkpoints.$.timerRequested': true } });
   }
   
-  // Send notification to coding organizers
+  // Send notification to specific coding organizer for this checkpoint
   const team = await db.collection('teams').findOne({ teamId });
   const seqEntry = progress.sequence[originalIndex];
   await sendNotificationToOrganizers(
     'coding',
     '🔔 Timer Request',
     `${team?.name || 'Team ' + teamId} is ready to start deferred ${seqEntry?.label || 'coding'} checkpoint`,
-    { teamId, checkpointIndex: originalIndex, teamName: team?.name || 'Team ' + teamId, action: 'timer_request' }
+    { teamId, checkpointIndex: originalIndex, teamName: team?.name || 'Team ' + teamId, action: 'timer_request' },
+    seqEntry?.label // Send to specific checkpoint organizer (C1 or C2)
   );
   
   res.json({ success: true, message: 'Activated! Ask organizer to start your timer.' });
 });
 
 // ─── ORGANIZER ────────────────────────────────────────────────────────────────
-// Get teams at specific checkpoint types (filtered by organizer's checkpoint type)
+// Get teams at specific checkpoint (filtered by organizer's specific checkpoint label)
 app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) => {
   const checkpointType = req.user.checkpointType || req.query.type; // Admin can query any type
+  const checkpointLabel = req.user.checkpointLabel || req.query.label; // Specific checkpoint (e.g., T4, C1)
   
   const allProgress = await db.collection('team_progress').find({}).toArray();
   const teams = await db.collection('teams').find({}).toArray();
@@ -1550,8 +1568,35 @@ app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) =>
     
     const cpData = p.checkpoints.find(c => c.index === idx);
     
-    // Filter by checkpoint type
-    if (checkpointType && seq.type !== checkpointType) {
+    // Filter by specific checkpoint label (e.g., activity1 only sees T4)
+    if (checkpointLabel && seq.label !== checkpointLabel) {
+      // For coding organizers, also check deferred coding with matching label
+      if (checkpointType === 'coding') {
+        for (const def of (p.deferredCoding || [])) {
+          if (def.completed) continue;
+          const deferredSeq = p.sequence[def.originalIndex];
+          if (deferredSeq && deferredSeq.label === checkpointLabel) {
+            const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
+            if (dc) {
+              result.push({ 
+                teamId: p.teamId, 
+                name: tm[p.teamId]?.name || `Team ${p.teamId}`, 
+                currentIndex: def.originalIndex, 
+                seq: deferredSeq, 
+                cpData: dc, 
+                isDeferred: true, 
+                deferred: p.deferredCoding || [],
+                canSkip: false
+              });
+            }
+          }
+        }
+      }
+      continue;
+    }
+    
+    // If no specific label but has type filter, filter by type only (for admin)
+    if (!checkpointLabel && checkpointType && seq.type !== checkpointType) {
       // For coding organizers, also check deferred coding
       if (checkpointType === 'coding') {
         for (const def of (p.deferredCoding || [])) {
@@ -1592,8 +1637,31 @@ app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) =>
       canSkip
     });
     
-    // For coding organizers, also include deferred coding
-    if (checkpointType === 'coding' || !checkpointType) {
+    // For coding organizers with specific label, also include deferred coding with matching label
+    if (checkpointLabel && checkpointType === 'coding') {
+      for (const def of (p.deferredCoding || [])) {
+        if (def.completed) continue;
+        const deferredSeq = p.sequence[def.originalIndex];
+        if (deferredSeq && deferredSeq.label === checkpointLabel) {
+          const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));
+          if (dc) {
+            result.push({ 
+              teamId: p.teamId, 
+              name: tm[p.teamId]?.name || `Team ${p.teamId}`, 
+              currentIndex: def.originalIndex, 
+              seq: deferredSeq, 
+              cpData: dc, 
+              isDeferred: true, 
+              deferred: p.deferredCoding || [],
+              canSkip: false
+            });
+          }
+        }
+      }
+    }
+    
+    // For coding organizers without specific label (admin), include all deferred coding
+    if (!checkpointLabel && (checkpointType === 'coding' || !checkpointType)) {
       for (const def of (p.deferredCoding || [])) {
         if (def.completed) continue;
         const dc = p.checkpoints.find(c => c.index === def.originalIndex && (c.timerRequested || c.status === 'in-progress' || c.status === 'submitted'));

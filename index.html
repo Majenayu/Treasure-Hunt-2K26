@@ -2754,13 +2754,33 @@ async function renderOrganizer(el) {
   
   const codingTeams = await api('GET', '/api/organizer/checkpoint-teams');
   const gs = await api('GET', '/api/game-state');
+  const me = await api('GET', '/api/me');
+  
+  // Get checkpoint display name
+  const checkpointNames = {
+    'T1': 'Tracing 1',
+    'T2': 'Tracing 2',
+    'T3': 'Tracing 3',
+    'C1': 'Coding 1',
+    'C2': 'Coding 2',
+    'T4': 'Activity 1 - Crossword',
+    'T5': 'Activity 2 - Questions',
+    'T6': 'Activity 3 - Word Puzzle',
+    'T7': 'Activity 4 - Encoding'
+  };
+  
+  const checkpointLabel = me.checkpointLabel || 'All Checkpoints';
+  const checkpointName = checkpointNames[checkpointLabel] || checkpointLabel;
+  
   el.innerHTML = `
-    <div class="alert alert-info"><i class="fas fa-wrench"></i> Organizer Panel — Manage teams at your assigned checkpoints.</div>
+    <div class="alert alert-info">
+      <i class="fas fa-wrench"></i> <strong>Organizer Panel</strong> — Monitoring: <strong style="color:var(--accent)">${checkpointName}</strong>
+    </div>
     ${codingTeams.length===0?`
       <div class="card" style="text-align:center;padding:40px">
         <div style="font-size:2.5rem;margin-bottom:12px">⏳</div>
-        <div class="card-title" style="justify-content:center">No teams at your checkpoints</div>
-        <p style="color:var(--muted)">Teams will appear here when they reach your checkpoint type.</p>
+        <div class="card-title" style="justify-content:center">No teams at ${checkpointName}</div>
+        <p style="color:var(--muted)">Teams will appear here when they reach your checkpoint.</p>
       </div>`:''
     }
     ${codingTeams.map(t=>{
