@@ -1244,13 +1244,34 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
 
+  // Stagger team starts to avoid more than 8 teams at same checkpoint
+  // Shuffle team order for staggered starts
+  const shuffledTeamIndices = teams.map((_, idx) => idx);
+  // Fisher-Yates shuffle with seed for reproducibility
+  for (let i = shuffledTeamIndices.length - 1; i > 0; i--) {
+    const j = Math.floor((Math.sin(i * 12345) * 10000) % (i + 1));
+    [shuffledTeamIndices[i], shuffledTeamIndices[j]] = [shuffledTeamIndices[j], shuffledTeamIndices[i]];
+  }
+  
+  // Assign starting checkpoints in waves (max 8 teams per checkpoint)
+  const TEAMS_PER_WAVE = 8;
+  const checkpointStarts = [0, 1, 2, 3, 4, 5, 6, 7]; // Can start at any of first 8 checkpoints (not final)
+  
   for (let i = 0; i < teams.length; i++) {
-    const team = teams[i];
+    const teamIndex = shuffledTeamIndices[i];
+    const team = teams[teamIndex];
+    const sequence = sequences[teamIndex];
+    
+    // Calculate which wave this team is in
+    const waveNumber = Math.floor(i / TEAMS_PER_WAVE);
+    // Assign starting checkpoint (cycle through available starts)
+    const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
+    
     if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
       await db.collection('team_progress').insertOne({
         teamId: team.teamId,
-        sequence: sequences[i],
-        currentIndex: 0,
+        sequence: sequence,
+        currentIndex: startCheckpoint,
         checkpoints: [],
         completedCheckpoints: [],
         totalPoints: 0,
