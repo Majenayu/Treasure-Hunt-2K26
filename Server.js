@@ -1682,6 +1682,18 @@ app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) =>
       continue;
     }
     
+    // Only show teams that have actually started this checkpoint (not just at it)
+    // For activity/tracing: status should be 'in-progress' or later
+    // For coding: status should be 'pending' or later (they need organizer to start timer)
+    if (!cpData) continue; // No checkpoint data yet, team hasn't started
+    
+    const validStatuses = ['in-progress', 'submitted', 'completed', 'pending-verification'];
+    if (seq.type === 'coding' || seq.type === 'finalCoding') {
+      validStatuses.push('pending'); // Coding checkpoints show pending teams (waiting for timer start)
+    }
+    
+    if (!validStatuses.includes(cpData.status)) continue; // Skip teams not at this checkpoint yet
+    
     // Calculate if team can skip (only for activity checkpoints)
     let canSkip = false;
     if (seq.type === 'activity' && cpData && cpData.timerStartedAt) {

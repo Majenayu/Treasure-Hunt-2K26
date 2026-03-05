@@ -1956,6 +1956,7 @@ async function renderTeamDashboard(el, gs, st) {
   const swapsUsedHere  = state.swapsUsedAtCurrentCheckpoint ?? 0;
   const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding' && seqEntry?.type !== 'activity';
   const done = (completedCheckpoints||[]).length;
+  const currentCheckpointNum = (currentIndex ?? 0) + 1; // Current checkpoint number (1-10)
   const pct  = Math.round((done/10)*100);
   const timerElapsed   = cpData?.timerElapsed || 0;
   const timerRemaining = Math.max(0, 600 - timerElapsed);
@@ -2093,7 +2094,7 @@ async function renderTeamDashboard(el, gs, st) {
 
   const mapHTML = `
     <div class="card">
-      <div class="card-title"><i class="fas fa-route"></i> Your Journey &mdash; ${done}/10 Checkpoints</div>
+      <div class="card-title"><i class="fas fa-route"></i> Your Journey &mdash; Checkpoint ${currentCheckpointNum} of 10 (${done} completed)</div>
       <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>
       <div class="cp-map" style="margin-top:16px">
         ${(sequence||[]).map(s=>{
