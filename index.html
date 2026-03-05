@@ -751,6 +751,7 @@ nav { display:flex; gap:4px; }
 .badge-coding  { background:rgba(178,75,255,.12); color:#c084fc; border:1px solid rgba(178,75,255,.3); }
 .badge-activity{ background:rgba(34,197,94,.12); color:#22c55e; border:1px solid rgba(34,197,94,.3); }
 .badge-ok      { background:rgba(16,185,129,.12); color:var(--green); border:1px solid rgba(16,185,129,.3); }
+.badge-success { background:rgba(34,197,94,.15); color:#22c55e; border:1px solid rgba(34,197,94,.4); font-weight:700; }
 .badge-warn    { background:rgba(245,158,11,.12); color:var(--yellow); border:1px solid rgba(245,158,11,.3); }
 .badge-red     { background:rgba(239,68,68,.12);  color:var(--red); border:1px solid rgba(239,68,68,.3); }
 .badge-junior  { background:rgba(16,185,129,.12); color:var(--green); border:1px solid rgba(16,185,129,.25); }
@@ -2806,7 +2807,7 @@ async function renderOrganizer(el) {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${t.isDeferred?`<span class="deferred-pill">⏭ Deferred</span>`:''}
             <span class="badge ${isActivity?'badge-activity':isCoding?'badge-coding':'badge-tracing'}">${t.seq?.label||''}</span>
-            <span class="badge ${cp?.status==='submitted'?'badge-ok':cp?.status==='in-progress'?'badge-tracing':'badge-warn'}">${cp?.status||'pending'}</span>
+            <span class="badge ${cp?.status==='completed'?'badge-ok':cp?.status==='pending-verification'?'badge-success':cp?.status==='submitted'?'badge-ok':cp?.status==='in-progress'?'badge-tracing':'badge-warn'}">${cp?.status||'pending'}</span>
             ${cp?.questionCode?`<span style="font-family:monospace;font-weight:900;color:var(--accent);background:rgba(0,229,255,.08);padding:4px 12px;border-radius:7px;border:1px solid rgba(0,229,255,.25);font-size:1rem">${cp.questionCode}</span>`:''}
             ${cp?.questionNumber?`<span style="color:var(--muted);font-size:.85rem">Paper #${cp.questionNumber}</span>`:''}
           </div>
