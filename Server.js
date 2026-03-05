@@ -631,10 +631,11 @@ async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null
     }
   }
   
-  // For coding questions (shouldn't reach here as coding uses fixed answer)
+  // For coding questions - assign from easy coding questions pool
   if (type === 'coding') {
     const q = await db.collection('questions').findOne({
       type: 'coding',
+      difficulty: 'easy',
       usedBy: { $not: { $elemMatch: { $eq: teamId } } }
     });
     if (q) {
@@ -1314,7 +1315,8 @@ app.get('/api/team/state', auth, async (req, res) => {
     let q = null;
     if (seqEntry.type === 'tracing') q = await assignQuestion(teamId, 'tracing', false, seqEntry.tracingIndex);
     else if (seqEntry.type === 'finalCoding') q = await assignQuestion(teamId, 'coding', true);
-    // Coding checkpoints use fixed answer from checkpoint metadata (like activity)
+    else if (seqEntry.type === 'coding') q = await assignQuestion(teamId, 'coding', false); // Assign coding questions from DB
+    
     const cpMeta = await db.collection('checkpoints').findOne({ label: seqEntry.label });
     cpData = {
       index: idx, type: seqEntry.type, label: seqEntry.label,
@@ -1323,7 +1325,7 @@ app.get('/api/team/state', auth, async (req, res) => {
       questionId: q?._id?.toString() || null,
       questionCode: q?.code || null,
       questionNumber: q?.questionNumber || null,
-      questionAnswer: seqEntry.type === 'coding' ? (cpMeta?.codingAnswer || 'ayush') : (q?.answer || null),
+      questionAnswer: q?.answer || null, // Use question answer from DB for all types
       // Tracing & activity timer auto-starts when clue/location is first revealed
       status: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? 'in-progress' : 'pending',
       timerStartedAt: (seqEntry.type === 'tracing' || seqEntry.type === 'activity') ? new Date() : null,
