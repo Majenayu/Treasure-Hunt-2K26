@@ -229,7 +229,7 @@ async function initializeDB() {
   const count = await teamsCol.countDocuments();
   if (count === 0) {
     const teams = [];
-    for (let i = 1; i <= 50; i++) {
+    for (let i = 1; i <= 55; i++) {
       teams.push({
         teamId: i,
         name: `Team ${i}`,
@@ -243,7 +243,7 @@ async function initializeDB() {
       });
     }
     await teamsCol.insertMany(teams);
-    console.log('✅ Seeded 50 teams');
+    console.log('✅ Seeded 55 teams');
   } else {
     // Migration: ensure fields exist on older docs
     await teamsCol.updateMany(
@@ -686,7 +686,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     const teamNum = parseInt(username);
-    if (isNaN(teamNum) || teamNum < 1 || teamNum > 50) {
+    if (isNaN(teamNum) || teamNum < 1 || teamNum > 55) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -727,7 +727,7 @@ app.post('/api/register', async (req, res) => {
     const { teamId, teamName, player1Name, player1Year, player1College, player2Name, player2Year, player2College } = req.body;
 
     const teamNum = parseInt(teamId);
-    if (isNaN(teamNum) || teamNum < 1 || teamNum > 50) {
+    if (isNaN(teamNum) || teamNum < 1 || teamNum > 55) {
       return res.status(400).json({ error: 'Invalid team number' });
     }
     if (!teamName || !teamName.trim()) return res.status(400).json({ error: 'Team name is required' });
@@ -1949,6 +1949,64 @@ app.post('/api/admin/teams/:teamId/add-swaps', auth, adminOnly, async (req, res)
 
   const updated = await db.collection('team_progress').findOne({ teamId });
   res.json({ success: true, swapsRemaining: updated.swapsRemaining });
+});
+
+// ─── ADMIN: Add missing teams 51-55 ──────────────────────────────────────────
+app.post('/api/admin/add-missing-teams', auth, adminOnly, async (req, res) => {
+  try {
+    const teamsCol = db.collection('teams');
+    
+    // Check which teams already exist
+    const existingTeams = await teamsCol.find({ teamId: { $in: [51, 52, 53, 54, 55] } }).toArray();
+    const existingIds = new Set(existingTeams.map(t => t.teamId));
+    
+    const teamsToAdd = [];
+    for (let i = 51; i <= 55; i++) {
+      if (!existingIds.has(i)) {
+        teamsToAdd.push({
+          teamId: i,
+          name: `Team ${i}`,
+          password: 'codehunt',
+          category: 'unset',
+          difficultyOverride: null,
+          members: [],
+          registered: false,
+          player1Name: '',
+          player1Year: '',
+          player1College: '',
+          player2Name: '',
+          player2Year: '',
+          player2College: ''
+        });
+      }
+    }
+    
+    if (teamsToAdd.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'All teams 51-55 already exist!',
+        added: 0,
+        existing: existingTeams.map(t => t.teamId)
+      });
+    }
+    
+    // Insert missing teams
+    await teamsCol.insertMany(teamsToAdd);
+    
+    const totalTeams = await teamsCol.countDocuments();
+    
+    console.log(`✅ Added ${teamsToAdd.length} missing teams: ${teamsToAdd.map(t => t.teamId).join(', ')}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Successfully added ${teamsToAdd.length} teams!`,
+      added: teamsToAdd.map(t => t.teamId),
+      totalTeams
+    });
+  } catch (err) {
+    console.error('Error adding teams:', err);
+    res.status(500).json({ error: 'Failed to add teams', details: err.message });
+  }
 });
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────

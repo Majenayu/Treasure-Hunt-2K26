@@ -2258,15 +2258,16 @@ async function renderAdminGame(el) {
     <div class="card" style="border-color:rgba(239,68,68,.3)">
       <div class="card-title" style="color:var(--red)"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-success btn-sm" onclick="adminAddMissingTeams()"><i class="fas fa-plus-circle"></i> Add Teams 51-55</button>
         <button class="btn btn-warn btn-sm" onclick="adminFixTeams()"><i class="fas fa-wrench"></i> Fix Duplicate Teams</button>
         <button class="btn btn-danger btn-sm" onclick="adminReset()"><i class="fas fa-redo"></i> Reset Event</button>
       </div>
     </div>
     <div class="qinfo">
-      <strong style="font-family:'Orbitron',sans-serif;font-size:.75rem">📊 Question Pool (50 teams):</strong><br><br>
-      • Tracing: 50 × 3 = 150 needed (recommended ~180) — Only T1, T2, T3 active<br>
+      <strong style="font-family:'Orbitron',sans-serif;font-size:.75rem">📊 Question Pool (55 teams):</strong><br><br>
+      • Tracing: 55 × 3 = 165 needed (recommended ~200) — Only T1, T2, T3 active<br>
       • Activity: T4, T5, T6, T7 use fixed code "ayush"<br>
-      • Coding: 50 × 2 = 100 needed (recommended ~120)<br>
+      • Coding: 55 × 2 = 110 needed (recommended ~130)<br>
       • Final: 10 questions (papers numbered 1–10)<br><br>
       Current: <strong>${questions.filter(q=>q.type==='tracing').length}</strong> tracing, <strong>${questions.filter(q=>q.type==='coding').length}</strong> coding, <strong>${finalQs.length}</strong> final
     </div>`;
@@ -2278,6 +2279,20 @@ async function adminFixTeams() {
     alert(`✅ Fixed! Removed ${r.removed} duplicate(s). Total teams now: ${r.totalNow}`);
     renderView('adminGame');
   } catch(e) { alert(e.message); }
+}
+async function adminAddMissingTeams() {
+  if (!confirm('Add teams 51-55 to the database?\n\nThis will add any missing teams between 51-55.')) return;
+  try {
+    const r = await api('POST','/api/admin/add-missing-teams');
+    if (r.added && r.added.length > 0) {
+      alert(`✅ Success!\n\nAdded teams: ${r.added.join(', ')}\nTotal teams now: ${r.totalTeams}\n\nTeams 51-55 can now login with username 51-55 and password "codehunt"`);
+    } else {
+      alert(`ℹ️ ${r.message}\n\nExisting teams: ${r.existing.join(', ')}`);
+    }
+    renderView('adminGame');
+  } catch(e) { 
+    alert(`❌ Error: ${e.message}`); 
+  }
 }
 async function adminStartEvent() {
   if (!confirm('Start the event? This generates checkpoint sequences for all teams.')) return;
