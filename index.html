@@ -1916,11 +1916,7 @@ async function renderTeamDashboard(el, gs, st) {
     return;
   }
   
-  if (state.noProgress) { 
-    const msg = state.message || 'Your team data is not ready yet. Please wait or refresh the page.';
-    el.innerHTML = `<div class="card"><p style="color:var(--muted)">${msg}</p></div>`; 
-    return; 
-  }
+  if (state.noProgress) { el.innerHTML = `<div class="card"><p style="color:var(--muted)">Your team data is not ready yet. Please wait.</p></div>`; return; }
   
   // Check if final checkpoint is locked
   if (state.finalLocked) {
@@ -2100,7 +2096,7 @@ async function renderTeamDashboard(el, gs, st) {
       <div class="card-title"><i class="fas fa-route"></i> Your Journey &mdash; ${done}/10 Checkpoints</div>
       <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>
       <div class="cp-map" style="margin-top:16px">
-        ${(sequence||[]).sort((a,b)=>a.index-b.index).map(s=>{
+        ${(sequence||[]).map(s=>{
           const ic = {tracing:'🔍',coding:'💻',finalCoding:'🏁',activity:'🎯'}[s.type]||'?';
           return `<div class="cp-node ${s.status}" title="Checkpoint ${s.index+1}: ${s.label}"><span>${ic}</span><span class="cp-type-chip">${s.index+1}</span></div>`;
         }).join('')}

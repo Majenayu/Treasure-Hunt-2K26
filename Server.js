@@ -1235,29 +1235,21 @@ app.get('/api/admin/progress', auth, adminOnly, async (req, res) => {
 // ─── ADMIN: Event Control ─────────────────────────────────────────────────────
 app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const gs = await db.collection('game_state').findOne({ key: 'main' });
-  if (gs?.started) return res.json({ success: true, message: 'Already started' });
+  if (gs.started) return res.json({ success: true, message: 'Already started' });
 
   // Only use registered teams (deduplicated)
   const allTeams = await db.collection('teams').find({}).sort({ teamId: 1 }).toArray();
   const seen = new Set();
   const teams = allTeams.filter(t => { if (seen.has(t.teamId)) return false; seen.add(t.teamId); return true; });
-  
-  if (teams.length === 0) {
-    return res.status(400).json({ error: 'No teams registered yet' });
-  }
-  
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
-
-  // Reset all questions' usedBy array for fresh start
-  await db.collection('questions').updateMany({}, { $set: { usedBy: [] } });
 
   // Stagger team starts to avoid more than 8 teams at same checkpoint
   // Shuffle team order for staggered starts
   const shuffledTeamIndices = teams.map((_, idx) => idx);
   // Fisher-Yates shuffle with seed for reproducibility
   for (let i = shuffledTeamIndices.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.abs(Math.sin(i * 12345) * 10000)) % (i + 1);
+    const j = Math.floor((Math.sin(i * 12345) * 10000) % (i + 1));
     [shuffledTeamIndices[i], shuffledTeamIndices[j]] = [shuffledTeamIndices[j], shuffledTeamIndices[i]];
   }
   
@@ -1265,84 +1257,40 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const TEAMS_PER_WAVE = 8;
   const checkpointStarts = [0, 1, 2, 3, 4, 5, 6, 7]; // Can start at any of first 8 checkpoints (not final)
   
-  let createdCount = 0;
-  let updatedCount = 0;
-  
   for (let i = 0; i < teams.length; i++) {
     const teamIndex = shuffledTeamIndices[i];
     const team = teams[teamIndex];
     const sequence = sequences[teamIndex];
-    
-    if (!team || !team.teamId) {
-      console.error(`Invalid team at index ${i}, teamIndex ${teamIndex}`);
-      continue;
-    }
     
     // Calculate which wave this team is in
     const waveNumber = Math.floor(i / TEAMS_PER_WAVE);
     // Assign starting checkpoint (cycle through available starts)
     const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
     
-    try {
-      // Use updateOne with upsert to either update existing or create new
-      const result = await db.collection('team_progress').updateOne(
-        { teamId: team.teamId },
-        { 
-          $set: {
-            sequence: sequence,
-            currentIndex: startCheckpoint,
-            checkpoints: [],
-            completedCheckpoints: [],
-            totalPoints: 0,
-            startTime: now,
-            deferredCoding: [],
-            swapsRemaining: 3,
-            swapsUsedPerCheckpoint: {}
-          }
-        },
-        { upsert: true }
-      );
-      
-      if (result.upsertedCount > 0) createdCount++;
-      if (result.modifiedCount > 0) updatedCount++;
-    } catch (err) {
-      console.error(`Error creating progress for team ${team.teamId}:`, err);
+    if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
+      await db.collection('team_progress').insertOne({
+        teamId: team.teamId,
+        sequence: sequence,
+        currentIndex: startCheckpoint,
+        checkpoints: [],
+        completedCheckpoints: [],
+        totalPoints: 0,
+        startTime: now,
+        deferredCoding: [],
+        swapsRemaining: 3,
+        swapsUsedPerCheckpoint: {}
+      });
     }
   }
-  
   await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: true, startTime: now } });
-  
-  console.log(`Event started: ${createdCount} teams created, ${updatedCount} teams updated`);
-  res.json({ success: true, message: `Event started! ${createdCount} new teams, ${updatedCount} updated teams.` });
+  res.json({ success: true });
 });
 
 app.post('/api/admin/reset-event', auth, adminOnly, async (req, res) => {
-  // Delete all team progress (but keep team registrations)
-  const progressDeleted = await db.collection('team_progress').deleteMany({});
-  
-  // Reset all questions' usedBy arrays
+  await db.collection('team_progress').deleteMany({});
   await db.collection('questions').updateMany({}, { $set: { usedBy: [] } });
-  
-  // Reset game state completely
-  await db.collection('game_state').updateOne(
-    { key: 'main' }, 
-    { 
-      $set: { 
-        started: false, 
-        startTime: null, 
-        finalCodingStarted: false, 
-        finalCodingStartTime: null,
-        paused: false,
-        pausedAt: null
-      } 
-    },
-    { upsert: true }
-  );
-  
-  res.json({ 
-    success: true, 
-    message: `Reset complete. Deleted ${progressDeleted.deletedCount} team progress records. Team registrations preserved.` 
-  });
+  await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: false, startTime: null, finalCodingStarted: false, finalCodingStartTime: null } });
+  res.json({ success: true });
 });
 
 app.post('/api/admin/final-coding-start', auth, adminOnly, async (req, res) => {
@@ -1436,38 +1384,8 @@ app.get('/api/team/state', auth, async (req, res) => {
   }
   
   if (!gs.started) return res.json({ gameStarted: false });
-  
   let progress = await db.collection('team_progress').findOne({ teamId });
-  
-  // If progress doesn't exist but event has started, auto-create it for this team
-  if (!progress) {
-    const team = await db.collection('teams').findOne({ teamId });
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found. Please contact admin.' });
-    }
-    
-    // Generate sequence for this team
-    const sequences = generateBalancedSequences([team]);
-    const sequence = sequences[0];
-    
-    // Create progress record with starting checkpoint 0
-    await db.collection('team_progress').insertOne({
-      teamId: team.teamId,
-      sequence: sequence,
-      currentIndex: 0,
-      checkpoints: [],
-      completedCheckpoints: [],
-      totalPoints: 0,
-      startTime: new Date(),
-      deferredCoding: [],
-      swapsRemaining: 3,
-      swapsUsedPerCheckpoint: {}
-    });
-    
-    // Fetch the newly created progress
-    progress = await db.collection('team_progress').findOne({ teamId });
-  }
-  
+  if (!progress) return res.json({ gameStarted: true, noProgress: true });
   const idx = progress.currentIndex;
   if (idx >= 10) return res.json({ gameStarted: true, finished: true, totalPoints: progress.totalPoints, completedCheckpoints: progress.completedCheckpoints });
 
