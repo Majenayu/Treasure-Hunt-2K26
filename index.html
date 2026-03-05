@@ -1707,7 +1707,7 @@ function startPolling() {
       if (_isPolling) return;
       smartPoll();
     }
-  }, 3000); // 3 seconds - balanced for responsiveness without excessive load
+  }, 15000); // 15 seconds - gives organizers time to enter data without interruption
 }
 function stopPolling() {
   if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
