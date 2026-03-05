@@ -105,25 +105,6 @@ app.use('/api/', apiLimiter);
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// Health check endpoints (no DB required)
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok',
-    dbConnected,
-    timestamp: new Date().toISOString(),
-    port: PORT,
-    version: '2.0'
-  });
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    server: 'running',
-    database: dbConnected ? 'connected' : 'connecting',
-    timestamp: new Date().toISOString()
-  });
-});
-
 // PWA manifest and service worker
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
@@ -153,8 +134,12 @@ app.use(express.static(__dirname, {
   }
 }));
 
-// ✅ DB connectivity check middleware will be applied AFTER routes, not before
-// This prevents 503 errors from blocking API endpoints during startup
+app.use((req, res, next) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ error: 'Server is starting up. Please wait a moment and try again.' });
+  }
+  next();
+});
 
 // ─── DB CONNECTION ────────────────────────────────────────────────────────────
 async function connectDB() {
@@ -163,33 +148,19 @@ async function connectDB() {
     connectTimeoutMS: 15000,
     socketTimeoutMS: 45000,
     tls: true,
-    maxPoolSize: 10,
-    minPoolSize: 2,
-    retryWrites: true,
-    w: 'majority'
   });
-  
-  try {
-    await client.connect();
-    db = client.db(DB_NAME);
-    dbConnected = true;
-    console.log('✅ Connected to MongoDB');
+  await client.connect();
+  db = client.db(DB_NAME);
+  dbConnected = true;
+  console.log('✅ Connected to MongoDB');
 
-    client.on('close', () => {
-      dbConnected = false;
-      console.warn('⚠️  MongoDB connection closed. Reconnecting...');
-      setTimeout(() => tryConnect(5), 5000);
-    });
+  client.on('close', () => {
+    dbConnected = false;
+    console.warn('⚠️  MongoDB connection closed. Reconnecting...');
+    setTimeout(() => tryConnect(5), 5000);
+  });
 
-    client.on('error', (err) => {
-      console.error('❌ MongoDB client error:', err.message);
-      dbConnected = false;
-    });
-
-    await initializeDB();
-  } catch (err) {
-    throw err;
-  }
+  await initializeDB();
 }
 
 async function tryConnect(retries = 10) {
@@ -615,7 +586,7 @@ async function getTeamDifficulty(teamId) {
 
 async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null) {
   if (isFinal) {
-    // Final round: assign one of the final questions by cycling teamId
+    // Final round: assign one of the 10 final questions by cycling teamId
     const finalQs = await db.collection('questions')
       .find({ type: 'finalCoding' })
       .sort({ questionNumber: 1 })
@@ -631,120 +602,46 @@ async function assignQuestion(teamId, type, isFinal = false, tracingIndex = null
     if (!team) return null;
     
     const difficultyMix = getTeamDifficultyMix(team);
-    const targetDifficulty = difficultyMix[tracingIndex];
+    const targetDifficulty = difficultyMix[tracingIndex]; // Get difficulty for this specific tracing checkpoint
     
-    // Get all questions of target difficulty
-    const allQuestions = await db.collection('questions')
-      .find({ type: 'tracing', difficulty: targetDifficulty })
-      .toArray();
+    // Find a question of the target difficulty that hasn't been used by this team
+    const q = await db.collection('questions').findOne({
+      type: 'tracing',
+      difficulty: targetDifficulty,
+      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+    });
     
-    if (allQuestions.length === 0) {
-      // Fallback to any difficulty
-      const fallbackDifficulties = ['easy', 'medium', 'hard'].filter(d => d !== targetDifficulty);
-      for (const d of fallbackDifficulties) {
-        const fallbackQs = await db.collection('questions')
-          .find({ type: 'tracing', difficulty: d })
-          .toArray();
-        if (fallbackQs.length > 0) {
-          allQuestions.push(...fallbackQs);
-          break;
-        }
-      }
+    if (q) {
+      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
+      return q;
     }
     
-    if (allQuestions.length === 0) return null;
-    
-    // Filter out questions already used by this team
-    const unusedByTeam = allQuestions.filter(q => !(q.usedBy || []).includes(teamId));
-    
-    // If team has used all questions, allow reuse but pick least recently used
-    const questionsToChooseFrom = unusedByTeam.length > 0 ? unusedByTeam : allQuestions;
-    
-    // Get questions currently in use by other teams at same checkpoint (to avoid duplicates)
-    const teamsAtSameCheckpoint = await db.collection('team_progress')
-      .find({ 
-        currentIndex: { $exists: true },
-        'sequence.type': 'tracing'
-      })
-      .toArray();
-    
-    const questionsInUse = new Set();
-    for (const tp of teamsAtSameCheckpoint) {
-      const currentSeq = tp.sequence?.[tp.currentIndex];
-      if (currentSeq?.type === 'tracing' && currentSeq?.tracingIndex === tracingIndex) {
-        const cp = tp.checkpoints?.find(c => c.index === tp.currentIndex);
-        if (cp?.questionId && cp?.status === 'in-progress') {
-          questionsInUse.add(cp.questionId.toString());
-        }
+    // Fallback: try any difficulty if target not available
+    const fallbackDifficulties = ['easy', 'medium', 'hard'].filter(d => d !== targetDifficulty);
+    for (const d of fallbackDifficulties) {
+      const fallbackQ = await db.collection('questions').findOne({
+        type: 'tracing',
+        difficulty: d,
+        usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+      });
+      if (fallbackQ) {
+        await db.collection('questions').updateOne({ _id: fallbackQ._id }, { $push: { usedBy: teamId } });
+        return fallbackQ;
       }
     }
-    
-    // Prefer questions not currently in use
-    const availableQuestions = questionsToChooseFrom.filter(q => !questionsInUse.has(q._id.toString()));
-    const finalPool = availableQuestions.length > 0 ? availableQuestions : questionsToChooseFrom;
-    
-    // Randomize selection using team ID as seed for consistency
-    const randomIndex = (teamId * 7919 + tracingIndex * 1009) % finalPool.length;
-    const selectedQuestion = finalPool[randomIndex];
-    
-    // Mark as used by this team
-    await db.collection('questions').updateOne(
-      { _id: selectedQuestion._id },
-      { $addToSet: { usedBy: teamId } }
-    );
-    
-    return selectedQuestion;
   }
   
-  // For coding questions - assign from coding questions pool
+  // For coding questions - assign from easy coding questions pool
   if (type === 'coding') {
-    // Get all coding questions
-    const allQuestions = await db.collection('questions')
-      .find({ type: 'coding', difficulty: 'easy' })
-      .toArray();
-    
-    if (allQuestions.length === 0) return null;
-    
-    // Filter out questions already used by this team
-    const unusedByTeam = allQuestions.filter(q => !(q.usedBy || []).includes(teamId));
-    
-    // If team has used all questions, allow reuse
-    const questionsToChooseFrom = unusedByTeam.length > 0 ? unusedByTeam : allQuestions;
-    
-    // Get questions currently in use by other teams at coding checkpoints
-    const teamsAtCoding = await db.collection('team_progress')
-      .find({ 
-        currentIndex: { $exists: true },
-        'sequence.type': 'coding'
-      })
-      .toArray();
-    
-    const questionsInUse = new Set();
-    for (const tp of teamsAtCoding) {
-      const currentSeq = tp.sequence?.[tp.currentIndex];
-      if (currentSeq?.type === 'coding') {
-        const cp = tp.checkpoints?.find(c => c.index === tp.currentIndex);
-        if (cp?.questionId && (cp?.status === 'pending' || cp?.status === 'in-progress')) {
-          questionsInUse.add(cp.questionId.toString());
-        }
-      }
+    const q = await db.collection('questions').findOne({
+      type: 'coding',
+      difficulty: 'easy',
+      usedBy: { $not: { $elemMatch: { $eq: teamId } } }
+    });
+    if (q) {
+      await db.collection('questions').updateOne({ _id: q._id }, { $push: { usedBy: teamId } });
+      return q;
     }
-    
-    // Prefer questions not currently in use
-    const availableQuestions = questionsToChooseFrom.filter(q => !questionsInUse.has(q._id.toString()));
-    const finalPool = availableQuestions.length > 0 ? availableQuestions : questionsToChooseFrom;
-    
-    // Randomize selection using team ID as seed
-    const randomIndex = (teamId * 8191) % finalPool.length;
-    const selectedQuestion = finalPool[randomIndex];
-    
-    // Mark as used by this team
-    await db.collection('questions').updateOne(
-      { _id: selectedQuestion._id },
-      { $addToSet: { usedBy: teamId } }
-    );
-    
-    return selectedQuestion;
   }
   
   return null;
@@ -1273,34 +1170,13 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
 
-  // Stagger team starts to avoid more than 8 teams at same checkpoint
-  // Shuffle team order for staggered starts
-  const shuffledTeamIndices = teams.map((_, idx) => idx);
-  // Fisher-Yates shuffle with seed for reproducibility
-  for (let i = shuffledTeamIndices.length - 1; i > 0; i--) {
-    const j = Math.floor((Math.sin(i * 12345) * 10000) % (i + 1));
-    [shuffledTeamIndices[i], shuffledTeamIndices[j]] = [shuffledTeamIndices[j], shuffledTeamIndices[i]];
-  }
-  
-  // Assign starting checkpoints in waves (max 8 teams per checkpoint)
-  const TEAMS_PER_WAVE = 8;
-  const checkpointStarts = [0, 1, 2, 3, 4, 5, 6, 7]; // Can start at any of first 8 checkpoints (not final)
-  
   for (let i = 0; i < teams.length; i++) {
-    const teamIndex = shuffledTeamIndices[i];
-    const team = teams[teamIndex];
-    const sequence = sequences[teamIndex];
-    
-    // Calculate which wave this team is in
-    const waveNumber = Math.floor(i / TEAMS_PER_WAVE);
-    // Assign starting checkpoint (cycle through available starts)
-    const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
-    
+    const team = teams[i];
     if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
       await db.collection('team_progress').insertOne({
         teamId: team.teamId,
-        sequence: sequence,
-        currentIndex: startCheckpoint,
+        sequence: sequences[i],
+        currentIndex: 0,
         checkpoints: [],
         completedCheckpoints: [],
         totalPoints: 0,
@@ -2133,33 +2009,6 @@ app.post('/api/admin/add-missing-teams', auth, adminOnly, async (req, res) => {
     console.error('Error adding teams:', err);
     res.status(500).json({ error: 'Failed to add teams', details: err.message });
   }
-});
-
-// ─── DB CHECK MIDDLEWARE (AFTER ALL ROUTES) ───────────────────────────────────
-// This ensures API endpoints work even during startup, but returns 503 for new requests
-app.use('/api/', (req, res, next) => {
-  if (!dbConnected || !db) {
-    return res.status(503).json({ 
-      error: 'Server is still connecting to database. Please wait a moment and try again.',
-      retryAfter: 5
-    });
-  }
-  next();
-});
-
-// ─── 404 HANDLER ─────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  console.warn(`⚠️  404: ${req.method} ${req.path}`);
-  res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
-});
-
-// ─── ERROR HANDLER ───────────────────────────────────────────────────────────
-app.use((err, req, res, next) => {
-  console.error('💥 Server error:', err);
-  res.status(err.status || 500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
 });
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
