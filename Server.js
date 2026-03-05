@@ -105,6 +105,25 @@ app.use('/api/', apiLimiter);
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
+// Health check endpoints (no DB required)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    dbConnected,
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    version: '2.0'
+  });
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    server: 'running',
+    database: dbConnected ? 'connected' : 'connecting',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // PWA manifest and service worker
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
@@ -134,12 +153,8 @@ app.use(express.static(__dirname, {
   }
 }));
 
-app.use((req, res, next) => {
-  if (!dbConnected || !db) {
-    return res.status(503).json({ error: 'Server is starting up. Please wait a moment and try again.' });
-  }
-  next();
-});
+// ✅ DB connectivity check middleware will be applied AFTER routes, not before
+// This prevents 503 errors from blocking API endpoints during startup
 
 // ─── DB CONNECTION ────────────────────────────────────────────────────────────
 async function connectDB() {
@@ -148,19 +163,33 @@ async function connectDB() {
     connectTimeoutMS: 15000,
     socketTimeoutMS: 45000,
     tls: true,
+    maxPoolSize: 10,
+    minPoolSize: 2,
+    retryWrites: true,
+    w: 'majority'
   });
-  await client.connect();
-  db = client.db(DB_NAME);
-  dbConnected = true;
-  console.log('✅ Connected to MongoDB');
+  
+  try {
+    await client.connect();
+    db = client.db(DB_NAME);
+    dbConnected = true;
+    console.log('✅ Connected to MongoDB');
 
-  client.on('close', () => {
-    dbConnected = false;
-    console.warn('⚠️  MongoDB connection closed. Reconnecting...');
-    setTimeout(() => tryConnect(5), 5000);
-  });
+    client.on('close', () => {
+      dbConnected = false;
+      console.warn('⚠️  MongoDB connection closed. Reconnecting...');
+      setTimeout(() => tryConnect(5), 5000);
+    });
 
-  await initializeDB();
+    client.on('error', (err) => {
+      console.error('❌ MongoDB client error:', err.message);
+      dbConnected = false;
+    });
+
+    await initializeDB();
+  } catch (err) {
+    throw err;
+  }
 }
 
 async function tryConnect(retries = 10) {
@@ -2104,6 +2133,33 @@ app.post('/api/admin/add-missing-teams', auth, adminOnly, async (req, res) => {
     console.error('Error adding teams:', err);
     res.status(500).json({ error: 'Failed to add teams', details: err.message });
   }
+});
+
+// ─── DB CHECK MIDDLEWARE (AFTER ALL ROUTES) ───────────────────────────────────
+// This ensures API endpoints work even during startup, but returns 503 for new requests
+app.use('/api/', (req, res, next) => {
+  if (!dbConnected || !db) {
+    return res.status(503).json({ 
+      error: 'Server is still connecting to database. Please wait a moment and try again.',
+      retryAfter: 5
+    });
+  }
+  next();
+});
+
+// ─── 404 HANDLER ─────────────────────────────────────────────────────────────
+app.use((req, res) => {
+  console.warn(`⚠️  404: ${req.method} ${req.path}`);
+  res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
+});
+
+// ─── ERROR HANDLER ───────────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('💥 Server error:', err);
+  res.status(err.status || 500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // ─── START SERVER ─────────────────────────────────────────────────────────────
