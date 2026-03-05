@@ -2267,6 +2267,7 @@ async function renderAdminGame(el) {
       <div class="card-title" style="color:var(--red)"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-sm" onclick="adminAddMissingTeams()"><i class="fas fa-plus-circle"></i> Add Teams 51-55</button>
+        <button class="btn btn-primary btn-sm" onclick="exportResults()"><i class="fas fa-download"></i> Export Results (CSV)</button>
         <button class="btn btn-warn btn-sm" onclick="adminFixTeams()"><i class="fas fa-wrench"></i> Fix Duplicate Teams</button>
         <button class="btn btn-danger btn-sm" onclick="adminReset()"><i class="fas fa-redo"></i> Reset Event</button>
       </div>
@@ -2371,6 +2372,54 @@ async function checkRoundState() {
     updateRoundButton(gs.roundPaused || false);
   } catch(e) {
     console.error('Failed to check round state:', e);
+  }
+}
+
+// Export results to CSV
+async function exportResults() {
+  try {
+    const progress = await api('GET', '/api/admin/progress');
+    const teams = await api('GET', '/api/admin/teams');
+    
+    // Create team lookup
+    const teamMap = {};
+    teams.forEach(t => teamMap[t.teamId] = t);
+    
+    // Sort by points
+    progress.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+    
+    // Build CSV
+    let csv = 'Rank,Team ID,Team Name,Player 1,Player 2,College,Total Points,Completed Checkpoints,Status\n';
+    
+    progress.forEach((p, idx) => {
+      const team = teamMap[p.teamId] || {};
+      const rank = idx + 1;
+      const teamId = p.teamId;
+      const teamName = (team.name || 'Unknown').replace(/,/g, ';');
+      const player1 = (team.player1Name || '').replace(/,/g, ';');
+      const player2 = (team.player2Name || '').replace(/,/g, ';');
+      const college = (team.college || '').replace(/,/g, ';');
+      const points = p.totalPoints || 0;
+      const completed = (p.completedCheckpoints || []).length;
+      const status = completed >= 10 ? 'Finished' : 'In Progress';
+      
+      csv += `${rank},${teamId},"${teamName}","${player1}","${player2}","${college}",${points},${completed},${status}\n`;
+    });
+    
+    // Download CSV
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `codehunt_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    alert(`✅ Exported ${progress.length} team results!`);
+  } catch(e) {
+    alert('Export failed: ' + e.message);
   }
 }
 
