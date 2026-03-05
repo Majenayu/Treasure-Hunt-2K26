@@ -2735,6 +2735,15 @@ async function renderAdminProgress(el) {
    ORGANIZER PANEL
    ============================================= */
 async function renderOrganizer(el) {
+  // Preserve input values before re-rendering
+  const preservedInputs = {};
+  const inputs = el.querySelectorAll('input[type="number"]');
+  inputs.forEach(input => {
+    if (input.id && input.value) {
+      preservedInputs[input.id] = input.value;
+    }
+  });
+  
   const codingTeams = await api('GET', '/api/organizer/checkpoint-teams');
   const gs = await api('GET', '/api/game-state');
   el.innerHTML = `
@@ -2841,6 +2850,16 @@ async function renderOrganizer(el) {
       </div>`;
     }).join('')}
     ${gs.finalCodingStarted?`<div class="card" style="border-color:rgba(245,158,11,.3)"><div class="card-title" style="color:var(--yellow)"><i class="fas fa-flag-checkered"></i> Final Round Active</div><p style="color:var(--muted);font-size:.88rem">Use admin login to mark final round completions.</p></div>`:``}`;
+  
+  // Restore preserved input values after re-rendering
+  setTimeout(() => {
+    Object.keys(preservedInputs).forEach(id => {
+      const input = document.getElementById(id);
+      if (input) {
+        input.value = preservedInputs[id];
+      }
+    });
+  }, 0);
 }
 
 async function orgStartTimer(teamId,idx){ try{await api('POST','/api/organizer/start-timer',{teamId,checkpointIndex:idx});renderView('organizer');}catch(e){alert(e.message);} }
