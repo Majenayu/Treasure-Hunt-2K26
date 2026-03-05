@@ -1244,16 +1244,12 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const now = new Date();
   const sequences = generateBalancedSequences(teams);
 
-  // Check which teams already have progress (to avoid duplicates)
-  const existingProgress = await db.collection('team_progress').find({}).toArray();
-  const existingTeamIds = new Set(existingProgress.map(p => p.teamId));
-
   // Stagger team starts to avoid more than 8 teams at same checkpoint
   // Shuffle team order for staggered starts
   const shuffledTeamIndices = teams.map((_, idx) => idx);
   // Fisher-Yates shuffle with seed for reproducibility
   for (let i = shuffledTeamIndices.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.abs(Math.sin(i * 12345) * 10000) % (i + 1));
+    const j = Math.floor(Math.abs(Math.sin(i * 12345) * 10000)) % (i + 1);
     [shuffledTeamIndices[i], shuffledTeamIndices[j]] = [shuffledTeamIndices[j], shuffledTeamIndices[i]];
   }
   
@@ -1261,40 +1257,31 @@ app.post('/api/admin/start-event', auth, adminOnly, async (req, res) => {
   const TEAMS_PER_WAVE = 8;
   const checkpointStarts = [0, 1, 2, 3, 4, 5, 6, 7]; // Can start at any of first 8 checkpoints (not final)
   
-  // Prepare bulk insert documents
-  const progressDocs = [];
   for (let i = 0; i < teams.length; i++) {
     const teamIndex = shuffledTeamIndices[i];
     const team = teams[teamIndex];
     const sequence = sequences[teamIndex];
-    
-    // Skip if team already has progress
-    if (existingTeamIds.has(team.teamId)) continue;
     
     // Calculate which wave this team is in
     const waveNumber = Math.floor(i / TEAMS_PER_WAVE);
     // Assign starting checkpoint (cycle through available starts)
     const startCheckpoint = checkpointStarts[waveNumber % checkpointStarts.length];
     
-    progressDocs.push({
-      teamId: team.teamId,
-      sequence: sequence,
-      currentIndex: startCheckpoint,
-      checkpoints: [],
-      completedCheckpoints: [],
-      totalPoints: 0,
-      startTime: now,
-      deferredCoding: [],
-      swapsRemaining: 3,
-      swapsUsedPerCheckpoint: {}
-    });
+    if (!(await db.collection('team_progress').findOne({ teamId: team.teamId }))) {
+      await db.collection('team_progress').insertOne({
+        teamId: team.teamId,
+        sequence: sequence,
+        currentIndex: startCheckpoint,
+        checkpoints: [],
+        completedCheckpoints: [],
+        totalPoints: 0,
+        startTime: now,
+        deferredCoding: [],
+        swapsRemaining: 3,
+        swapsUsedPerCheckpoint: {}
+      });
+    }
   }
-  
-  // Bulk insert all progress documents at once
-  if (progressDocs.length > 0) {
-    await db.collection('team_progress').insertMany(progressDocs, { ordered: false });
-  }
-  
   await db.collection('game_state').updateOne({ key: 'main' }, { $set: { started: true, startTime: now } });
   res.json({ success: true });
 });
@@ -1681,18 +1668,6 @@ app.get('/api/organizer/checkpoint-teams', auth, orgOrAdmin, async (req, res) =>
       }
       continue;
     }
-    
-    // Only show teams that have actually started this checkpoint (not just at it)
-    // For activity/tracing: status should be 'in-progress' or later
-    // For coding: status should be 'pending' or later (they need organizer to start timer)
-    if (!cpData) continue; // No checkpoint data yet, team hasn't started
-    
-    const validStatuses = ['in-progress', 'submitted', 'completed', 'pending-verification'];
-    if (seq.type === 'coding' || seq.type === 'finalCoding') {
-      validStatuses.push('pending'); // Coding checkpoints show pending teams (waiting for timer start)
-    }
-    
-    if (!validStatuses.includes(cpData.status)) continue; // Skip teams not at this checkpoint yet
     
     // Calculate if team can skip (only for activity checkpoints)
     let canSkip = false;

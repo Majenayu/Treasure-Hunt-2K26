@@ -1956,7 +1956,6 @@ async function renderTeamDashboard(el, gs, st) {
   const swapsUsedHere  = state.swapsUsedAtCurrentCheckpoint ?? 0;
   const canSwap = swapsRemaining > 0 && swapsUsedHere < 1 && seqEntry?.type !== 'finalCoding' && seqEntry?.type !== 'activity';
   const done = (completedCheckpoints||[]).length;
-  const currentCheckpointNum = (currentIndex ?? 0) + 1; // Current checkpoint number (1-10)
   const pct  = Math.round((done/10)*100);
   const timerElapsed   = cpData?.timerElapsed || 0;
   const timerRemaining = Math.max(0, 600 - timerElapsed);
@@ -2094,10 +2093,10 @@ async function renderTeamDashboard(el, gs, st) {
 
   const mapHTML = `
     <div class="card">
-      <div class="card-title"><i class="fas fa-route"></i> Your Journey &mdash; Checkpoint ${currentCheckpointNum} of 10 (${done} completed)</div>
+      <div class="card-title"><i class="fas fa-route"></i> Your Journey &mdash; ${done}/10 Checkpoints</div>
       <div class="pbar"><div class="pbar-fill" style="width:${pct}%"></div></div>
       <div class="cp-map" style="margin-top:16px">
-        ${(sequence||[]).map(s=>{
+        ${(sequence||[]).sort((a,b)=>a.index-b.index).map(s=>{
           const ic = {tracing:'🔍',coding:'💻',finalCoding:'🏁',activity:'🎯'}[s.type]||'?';
           return `<div class="cp-node ${s.status}" title="Checkpoint ${s.index+1}: ${s.label}"><span>${ic}</span><span class="cp-type-chip">${s.index+1}</span></div>`;
         }).join('')}
@@ -2268,7 +2267,6 @@ async function renderAdminGame(el) {
       <div class="card-title" style="color:var(--red)"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-sm" onclick="adminAddMissingTeams()"><i class="fas fa-plus-circle"></i> Add Teams 51-55</button>
-        <button class="btn btn-primary btn-sm" onclick="exportResults()"><i class="fas fa-download"></i> Export Results (CSV)</button>
         <button class="btn btn-warn btn-sm" onclick="adminFixTeams()"><i class="fas fa-wrench"></i> Fix Duplicate Teams</button>
         <button class="btn btn-danger btn-sm" onclick="adminReset()"><i class="fas fa-redo"></i> Reset Event</button>
       </div>
@@ -2373,54 +2371,6 @@ async function checkRoundState() {
     updateRoundButton(gs.roundPaused || false);
   } catch(e) {
     console.error('Failed to check round state:', e);
-  }
-}
-
-// Export results to CSV
-async function exportResults() {
-  try {
-    const progress = await api('GET', '/api/admin/progress');
-    const teams = await api('GET', '/api/admin/teams');
-    
-    // Create team lookup
-    const teamMap = {};
-    teams.forEach(t => teamMap[t.teamId] = t);
-    
-    // Sort by points
-    progress.sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
-    
-    // Build CSV
-    let csv = 'Rank,Team ID,Team Name,Player 1,Player 2,College,Total Points,Completed Checkpoints,Status\n';
-    
-    progress.forEach((p, idx) => {
-      const team = teamMap[p.teamId] || {};
-      const rank = idx + 1;
-      const teamId = p.teamId;
-      const teamName = (team.name || 'Unknown').replace(/,/g, ';');
-      const player1 = (team.player1Name || '').replace(/,/g, ';');
-      const player2 = (team.player2Name || '').replace(/,/g, ';');
-      const college = (team.college || '').replace(/,/g, ';');
-      const points = p.totalPoints || 0;
-      const completed = (p.completedCheckpoints || []).length;
-      const status = completed >= 10 ? 'Finished' : 'In Progress';
-      
-      csv += `${rank},${teamId},"${teamName}","${player1}","${player2}","${college}",${points},${completed},${status}\n`;
-    });
-    
-    // Download CSV
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `codehunt_results_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    alert(`✅ Exported ${progress.length} team results!`);
-  } catch(e) {
-    alert('Export failed: ' + e.message);
   }
 }
 
