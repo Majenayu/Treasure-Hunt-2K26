@@ -1504,17 +1504,28 @@ async function api(method, endpoint, body) {
   try {
     const r = await fetch(endpoint, opts);
     
-    // Handle server errors (502, 503, etc.) that don't return JSON
+    // Check if response has content before trying to parse JSON
+    const contentType = r.headers.get('content-type');
+    const hasJsonContent = contentType && contentType.includes('application/json');
+    
+    // Handle server errors (502, 503, etc.)
     if (r.status >= 500) {
-      throw new Error(`Server error (${r.status}). Please try again.`);
+      console.warn(`Server error ${r.status} for ${endpoint}`);
+      throw new Error(`Server temporarily unavailable. Please try again.`);
     }
     
-    // Try to parse JSON response
-    let data;
-    try {
-      data = await r.json();
-    } catch (jsonError) {
-      throw new Error(`Invalid server response. Please refresh the page.`);
+    // Only try to parse JSON if we have JSON content
+    let data = null;
+    if (hasJsonContent) {
+      const text = await r.text();
+      if (text && text.trim()) {
+        try {
+          data = JSON.parse(text);
+        } catch (jsonError) {
+          console.error('JSON parse error:', text);
+          throw new Error(`Invalid response from server.`);
+        }
+      }
     }
     
     if (r.status === 401) {
@@ -1526,11 +1537,16 @@ async function api(method, endpoint, body) {
       throw new Error('Session expired');
     }
     
-    if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+    if (!r.ok) {
+      const errorMsg = data?.error || `Request failed (${r.status})`;
+      throw new Error(errorMsg);
+    }
+    
     return data;
   } catch (error) {
     // Network errors or fetch failures
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+      console.warn('Network error for', endpoint);
       throw new Error('Network error. Check your connection.');
     }
     throw error;
@@ -1816,7 +1832,9 @@ async function smartPoll() {
       renderView(currentView);
     }
   } catch(e) {
-    console.warn('Poll error:', e.message);
+    // Silently handle polling errors - don't disrupt user experience
+    console.warn('Poll error (will retry):', e.message);
+    // Don't show error to user, just log it and continue polling
   } finally {
     _isPolling = false;
   }
