@@ -2792,15 +2792,15 @@ async function renderOrganizer(el) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label style="display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px">Correct Answers</label>
-                <input type="number" id="correct_${t.teamId}_${t.currentIndex}" min="0" max="20" 
-                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center" 
-                  placeholder="0" value="">
+                <input type="number" id="correct_${t.teamId}_${t.currentIndex}" min="0" max="20" step="1"
+                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center;background:var(--bg-secondary);border:1px solid rgba(0,229,255,.3);cursor:text" 
+                  placeholder="Enter correct answers" autocomplete="off">
               </div>
               <div>
                 <label style="display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px">Total Questions</label>
-                <input type="number" id="total_${t.teamId}_${t.currentIndex}" min="1" max="20" 
-                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center" 
-                  placeholder="10" value="${t.seq?.activitySets || 10}">
+                <input type="number" id="total_${t.teamId}_${t.currentIndex}" min="1" max="20" step="1"
+                  class="inp" style="width:100%;padding:8px;font-size:1.1rem;font-weight:700;text-align:center;background:var(--bg-secondary);border:1px solid rgba(0,229,255,.3);cursor:text" 
+                  placeholder="Total questions" value="${t.seq?.activitySets || 10}" autocomplete="off">
               </div>
             </div>
             <button class="btn btn-success btn-sm" style="width:100%;margin-top:0;font-size:1rem;padding:10px" 
