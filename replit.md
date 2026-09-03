@@ -22,8 +22,9 @@ This first event-ready version intentionally has no MongoDB dependency or extern
 ## Main flows
 
 - Admin: live station pulse, event pause/resume, team registry, team reset, station enable/disable, and leaderboard.
-- Team: sign in with a team code, scan the current station code, start the mission, submit an answer, and follow the controlled route.
-- Timed coding missions are server-timed with a five-minute limit.
+- Team: sign in with a team code, see the assigned location, wait for location-volunteer verification, submit coding/mystery answers, record riddle passes from partial QR codes, and follow the controlled route.
+- Volunteers have location-scoped accounts. Demo examples are `coding1 / events` (C1 · LAB A), `logic1 / events` (L1 · NORTH HALL), `puzzle1 / events` (P1 · COURTYARD), and `mystery1 / events` (M1 · MAKER SPACE).
+- Coding verification starts a server-timed five-minute round; submitting in the team portal stops the timer and awards the score. Logic and Puzzle volunteers record a score such as `6/10` to release the next clue. Mystery verification starts the in-app quiz. Riddles are QR-only and do not use a volunteer or physical location; three successful passes advance the route.
 
 ## Replit preview
 

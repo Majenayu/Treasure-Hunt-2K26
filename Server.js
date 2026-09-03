@@ -68,9 +68,9 @@ const challengeSeed = [
     name: 'Echo Chamber',
     type: 'RIDDLE',
     icon: '?',
-    station: 'AUDITORIUM',
+    station: 'RIDDLE QR',
     stationCode: 'ECHO-12',
-    location: 'Main Auditorium · Backstage',
+    location: '',
     color: 'violet',
     timeLimit: 0,
     points: 100,
@@ -150,15 +150,15 @@ const challengeSeed = [
     name: 'Final Frequency',
     type: 'RIDDLE',
     icon: '?',
-    station: 'ROOFTOP',
+    station: 'RIDDLE QR',
     stationCode: 'ROOF-09',
-    location: 'Rooftop Garden · Gate 1',
+    location: '',
     color: 'violet',
     timeLimit: 0,
     points: 100,
-    prompt: 'The more you take, the more you leave behind. What are they?',
-    answer: 'footsteps',
-    hint: 'You make them while moving.',
+    prompt: 'I have a neck but no head. What am I?',
+    answer: 'bottle',
+    hint: 'It can hold a drink.',
   },
   {
     id: 'mystery-02',
@@ -431,6 +431,7 @@ for (let i = 1; i <= 50; i += 1) {
     completedAt: null,
     currentChallenge: null,
     questionAssignments: {},
+    riddleProgress: {},
     startedAt: null,
     completedChallenges: [],
   });
@@ -494,6 +495,10 @@ function requireAdmin(req, res, next) {
 function publicChallenge(challenge) {
   if (!challenge) return null;
   const { answer, questionSets, volunteerCode, ...safeChallenge } = challenge;
+  if (challenge.type === 'RIDDLE') {
+    delete safeChallenge.location;
+    delete safeChallenge.station;
+  }
   return safeChallenge;
 }
 
@@ -576,6 +581,11 @@ function assignedQuestions(team, challenge) {
     return team.mysteryOrder.slice(start, start + 20).map((index) => MYSTERY_POOL[index]);
   }
   const assignment = team.questionAssignments[challenge.id] ?? 0;
+  if (challenge.type === 'RIDDLE') {
+    const riddles = challenge.questionSets[0] || [];
+    const step = Math.min(team.riddleProgress?.[challenge.id] || 0, Math.max(0, riddles.length - 1));
+    return riddles[step] ? [riddles[step]] : [];
+  }
   return challenge.questionSets[assignment] || challenge.questionSets[0] || [];
 }
 
@@ -614,6 +624,10 @@ function publicTeam(team) {
     } else {
       safeChallenge.questionSet = assignment + 1;
     }
+    if (challenge.type === 'RIDDLE') {
+      safeChallenge.riddleStep = (team.riddleProgress?.[challenge.id] || 0) + 1;
+      safeChallenge.riddleTotal = challenge.questionSets[0]?.length || 3;
+    }
     safeChallenge.questions = assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
   }
   return {
@@ -631,6 +645,20 @@ function publicTeam(team) {
     missionSeconds: secondsOnMission(team),
     totalMissions: team.route.length,
   };
+}
+
+function completeChallenge(team, challenge, elapsed, earnedPoints) {
+  team.score += earnedPoints;
+  team.totalSeconds += elapsed;
+  team.completedChallenges.push({ id: challenge.id, seconds: elapsed, at: new Date().toISOString() });
+  team.currentIndex += 1;
+  team.currentChallenge = null;
+  team.startedAt = null;
+  team.attempts = 0;
+  if (team.currentIndex >= team.route.length) {
+    team.completedAt = new Date().toISOString();
+    team.active = false;
+  }
 }
 
 function leaderboard() {
@@ -690,17 +718,17 @@ app.post('/api/login', loginLimiter, (req, res) => {
   }
 
   const organizerAccounts = {
-    tracing1: { checkpointType: 'tracing', checkpointLabel: 'T1' },
-    tracing2: { checkpointType: 'tracing', checkpointLabel: 'T2' },
-    coding1: { checkpointType: 'coding', checkpointLabel: 'C1' },
-    coding2: { checkpointType: 'coding', checkpointLabel: 'C2' },
-    logic1: { checkpointType: 'logic', checkpointLabel: 'NORTH HALL' },
-    logic2: { checkpointType: 'logic', checkpointLabel: 'EAST WING' },
-    puzzle1: { checkpointType: 'puzzle', checkpointLabel: 'COURTYARD' },
-    puzzle2: { checkpointType: 'puzzle', checkpointLabel: 'WEST STAIRS' },
-    activity1: { checkpointType: 'activity', checkpointLabel: 'T4' },
-    activity2: { checkpointType: 'activity', checkpointLabel: 'T5' },
-    activity3: { checkpointType: 'activity', checkpointLabel: 'T6' },
+    coding1: { checkpointType: 'coding', checkpointId: 'C1', checkpointLabel: 'LAB A' },
+    coding2: { checkpointType: 'coding', checkpointId: 'C2', checkpointLabel: 'LAB B' },
+    logic1: { checkpointType: 'logic', checkpointId: 'L1', checkpointLabel: 'NORTH HALL' },
+    logic2: { checkpointType: 'logic', checkpointId: 'L2', checkpointLabel: 'EAST WING' },
+    puzzle1: { checkpointType: 'puzzle', checkpointId: 'P1', checkpointLabel: 'COURTYARD' },
+    puzzle2: { checkpointType: 'puzzle', checkpointId: 'P2', checkpointLabel: 'WEST STAIRS' },
+    mystery1: { checkpointType: 'mystery', checkpointId: 'M1', checkpointLabel: 'MAKER SPACE' },
+    mystery2: { checkpointType: 'mystery', checkpointId: 'M2', checkpointLabel: 'FINISH LINE' },
+    activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
+    activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
+    activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
   };
   if (role === 'organizer') {
     const account = organizerAccounts[username.trim().toLowerCase()];
@@ -917,6 +945,7 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.active = false; team.completedAt = null; team.currentChallenge = null;
     team.startedAt = null; team.completedChallenges = [];
     team.questionAssignments = {};
+    team.riddleProgress = {};
     team.mysteryOrder = null;
   }
   state.status = 'PAUSED';
@@ -952,6 +981,7 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.startedAt = null;
   team.completedChallenges = [];
   team.questionAssignments = {};
+  team.riddleProgress = {};
   team.mysteryOrder = null;
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
@@ -970,11 +1000,12 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   const challenge = getTeamChallenge(team);
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
   if (challenge.disabled) return res.status(409).json({ error: 'This station is temporarily offline.' });
-  if (['PUZZLE', 'LOGIC'].includes(challenge.type)) {
-    return res.status(409).json({ error: 'A checkpoint volunteer must unlock this clue.' });
+  if (['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)) {
+    return res.status(409).json({ error: 'A location volunteer must verify your team before this mission starts.' });
   }
   if ((req.body.stationCode || '').trim().toUpperCase() !== challenge.stationCode) {
-    return res.status(400).json({ error: `Wrong station. Scan the code at ${challenge.location}.` });
+    const scanTarget = challenge.type === 'RIDDLE' ? 'the partial riddle QR code' : `the code at ${challenge.location}`;
+    return res.status(400).json({ error: `Wrong scan. Scan ${scanTarget}.` });
   }
   if (team.currentChallenge && team.startedAt) return res.json({ ok: true, team: publicTeam(team) });
   const stationTeams = [...teams.values()].filter((other) => getTeamChallenge(other)?.id === challenge.id && other.currentChallenge && other.startedAt);
@@ -988,26 +1019,58 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   res.json({ ok: true, team: publicTeam(team) });
 });
 
-app.post('/api/organizer/unlock', requireAuth, (req, res) => {
+app.post('/api/organizer/verify', requireAuth, (req, res) => {
   if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
   const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
   if (!team) return res.status(404).json({ error: 'Team not found.' });
   const challenge = getTeamChallenge(team);
-  if (!challenge || !['PUZZLE', 'LOGIC'].includes(challenge.type)) {
-    return res.status(409).json({ error: 'This team is not waiting at a Puzzle or Logic checkpoint.' });
+  if (!challenge || !['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)) {
+    return res.status(409).json({ error: 'This team is not waiting at a volunteer checkpoint.' });
   }
   if (req.user.checkpointType && req.user.checkpointType !== challenge.type.toLowerCase()) {
     return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
   }
-  if (String(req.body.secretCode || '').trim().toUpperCase() !== challenge.volunteerCode) {
-    return res.status(400).json({ error: 'That volunteer code is not valid for this checkpoint.' });
+  if (req.user.checkpointLabel && req.user.checkpointLabel !== challenge.station) {
+    return res.status(403).json({ error: 'This team is assigned to another location.' });
   }
   if (team.currentChallenge && team.startedAt) return res.json({ ok: true, team: publicTeam(team) });
+  const stationTeams = [...teams.values()].filter((other) => getTeamChallenge(other)?.id === challenge.id && other.currentChallenge && other.startedAt);
+  if (stationTeams.length >= (challenge.type === 'CODING' ? 5 : 10)) {
+    return res.status(409).json({ error: `${challenge.station} is at capacity. Please wait for the next opening.` });
+  }
   assignQuestionSet(team, challenge);
   team.currentChallenge = challenge.id;
   team.startedAt = new Date().toISOString();
-  writeAudit('CLUE UNLOCKED', `${team.id} received the ${challenge.type.toLowerCase()} clue`, req.user.username);
+  writeAudit('TEAM VERIFIED', `${team.id} verified at ${challenge.station} for ${challenge.type.toLowerCase()}`, req.user.username);
   res.json({ ok: true, team: publicTeam(team) });
+});
+
+app.post('/api/organizer/score', requireAuth, (req, res) => {
+  if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
+  if (!team) return res.status(404).json({ error: 'Team not found.' });
+  const challenge = getTeamChallenge(team);
+  if (!challenge || !['PUZZLE', 'LOGIC'].includes(challenge.type) || team.currentChallenge !== challenge.id || !team.startedAt) {
+    return res.status(409).json({ error: 'Verify this team before recording a Logic or Puzzle score.' });
+  }
+  if (req.user.checkpointType && req.user.checkpointType !== challenge.type.toLowerCase()) {
+    return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
+  }
+  if (req.user.checkpointLabel && req.user.checkpointLabel !== challenge.station) {
+    return res.status(403).json({ error: 'This team is assigned to another location.' });
+  }
+  const scoreText = String(req.body.score ?? '').trim();
+  const match = scoreText.match(/^(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(\d+(?:\.\d+)?)?$/i);
+  const score = Number(match ? match[1] : scoreText);
+  const maxScore = Number(req.body.maxScore || (match && match[2]) || 10);
+  if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0 || score < 0 || score > maxScore) {
+    return res.status(400).json({ error: 'Enter a score from 0 to the maximum, such as 6/10.' });
+  }
+  const elapsed = secondsOnMission(team);
+  const earnedPoints = Math.round((score / maxScore) * challenge.points);
+  completeChallenge(team, challenge, elapsed, earnedPoints);
+  writeAudit('MISSION SCORED', `${team.id} scored ${score}/${maxScore} at ${challenge.station}`, req.user.username);
+  res.json({ ok: true, score, maxScore, earnedPoints, team: publicTeam(team) });
 });
 
 app.post('/api/team/submit', requireAuth, (req, res) => {
@@ -1030,26 +1093,28 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
     && submittedAnswers.length === expectedQuestions.length
     && expectedQuestions.every((_, index) => String(submittedAnswers[index] || '').trim().length > 0);
   const correct = !timedOut
-    && (isMysteryQuiz ? quizComplete : submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length);
+    && (isMysteryQuiz
+      ? quizComplete
+      : submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length);
   team.attempts += 1;
   if (!correct) {
     writeAudit('ANSWER MISSED', `${team.id} attempted ${challenge.name}`, team.id);
     return res.json({ ok: true, correct: false, timedOut, attempts: team.attempts, team: publicTeam(team) });
   }
+  if (challenge.type === 'RIDDLE') {
+    const step = team.riddleProgress?.[challenge.id] || 0;
+    const total = challenge.questionSets[0]?.length || 3;
+    if (step + 1 < total) {
+      team.riddleProgress[challenge.id] = step + 1;
+      team.attempts = 0;
+      writeAudit('RIDDLE PASSED', `${team.id} passed riddle ${step + 1}/${total}`, team.id);
+      return res.json({ ok: true, correct: true, riddleAdvanced: true, riddleStep: step + 2, riddleTotal: total, team: publicTeam(team) });
+    }
+  }
   const earnedPoints = isMysteryQuiz
     ? Math.round((correctAnswers / expectedQuestions.length) * challenge.points)
     : Math.max(20, challenge.points - (team.attempts - 1) * 20);
-  team.score += earnedPoints;
-  team.totalSeconds += elapsed;
-  team.completedChallenges.push({ id: challenge.id, seconds: elapsed, at: new Date().toISOString() });
-  team.currentIndex += 1;
-  team.currentChallenge = null;
-  team.startedAt = null;
-  team.attempts = 0;
-  if (team.currentIndex >= team.route.length) {
-    team.completedAt = new Date().toISOString();
-    team.active = false;
-  }
+  completeChallenge(team, challenge, elapsed, earnedPoints);
   writeAudit('MISSION CLEARED', `${team.id} completed ${challenge.name}`, team.id);
   res.json({ ok: true, correct: true, correctAnswers, totalQuestions: expectedQuestions.length, earnedPoints, score: team.score, team: publicTeam(team) });
 });
@@ -1057,9 +1122,15 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
 app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
   if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
   const station = req.user.checkpointLabel;
-  const rows = [...teams.values()].filter((team) => !req.user.checkpointType || getTeamChallenge(team)?.type.toLowerCase() === req.user.checkpointType)
-    .map((team) => ({ ...publicTeam(team), checkpointLabel: station }));
-  res.json({ checkpointLabel: station || 'ALL', teams: rows });
+  const rows = [...teams.values()]
+    .filter((team) => {
+      const challenge = getTeamChallenge(team);
+      return team.active && challenge
+        && (!req.user.checkpointType || challenge.type.toLowerCase() === req.user.checkpointType)
+        && (!station || challenge.station === station);
+    })
+    .map((team) => ({ ...publicTeam(team), checkpointId: req.user.checkpointId || 'ALL', checkpointLabel: station || 'ALL' }));
+  res.json({ checkpointId: req.user.checkpointId || 'ALL', checkpointLabel: station || 'ALL', teams: rows });
 });
 
 app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
