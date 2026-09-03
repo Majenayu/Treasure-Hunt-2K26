@@ -609,7 +609,7 @@ app.get('/api/admin/teams', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
-  res.json(challengeSeed.map((challenge) => ({
+  const rounds = challengeSeed.map((challenge) => ({
     _id: challenge.id,
     questionNumber: challenge.number,
     code: challenge.stationCode,
@@ -622,7 +622,17 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     totalQuestions: challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT * 3),
     eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : QUESTION_SET_COUNT * 3,
     eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'shared pool; randomized per team' : 'per round',
-  })));
+  }));
+  res.json({
+    rounds,
+    plan: {
+      coding: { total: 10, roundOne: 5, roundTwo: 5, perTeam: 1, mode: 'timed · one at a time' },
+      riddles: { total: 6, roundOne: 3, roundTwo: 3, perTeam: 3, mode: 'fixed order · no mixing' },
+      puzzles: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 3, mode: 'volunteer secret-code unlock' },
+      logic: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 3, mode: 'volunteer secret-code unlock' },
+      mystery: { total: 40, roundOne: 20, roundTwo: 20, perTeam: 20, mode: 'in-app quiz · randomized per team' },
+    },
+  });
 });
 
 app.post('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
