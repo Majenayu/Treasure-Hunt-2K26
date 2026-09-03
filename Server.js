@@ -174,8 +174,88 @@ const challengeSeed = [
   },
 ];
 
+const QUESTION_SET_COUNT = 10;
+
+function makeQuestion(type, seed, index) {
+  const n = seed * 10 + index + 1;
+  const variant = index % 3;
+  if (type === 'CODING') {
+    if (variant === 0) {
+      const left = (n % 17) + 3;
+      const right = (n % 7) + 2;
+      const add = n % 9;
+      return { prompt: `What is the output of: ${left} * ${right} + ${add}?`, answer: String(left * right + add) };
+    }
+    if (variant === 1) {
+      const count = (n % 6) + 4;
+      return { prompt: `A loop adds every integer from 1 through ${count}. What is the final total?`, answer: String((count * (count + 1)) / 2) };
+    }
+    const values = [n % 11, (n + 3) % 11, (n + 6) % 11, (n + 9) % 11];
+    const position = n % values.length;
+    return { prompt: `An array is [${values.join(', ')}]. What value is at index ${position}?`, answer: String(values[position]) };
+  }
+  if (type === 'LOGIC') {
+    if (variant === 0) {
+      const start = (n % 20) + 2;
+      const step = (n % 8) + 2;
+      return { prompt: `Complete the sequence: ${start}, ${start + step}, ${start + step * 2}, ${start + step * 3}, __`, answer: String(start + step * 4) };
+    }
+    if (variant === 1) {
+      const base = (n % 8) + 2;
+      return { prompt: `The pattern is 1, ${base}, ${base * 2}, ${base * 3}. What comes next?`, answer: String(base * 4) };
+    }
+    const machines = (n % 8) + 3;
+    return { prompt: `If ${machines} machines make ${machines} parts in ${machines} minutes, how many minutes do 100 machines need to make 100 parts?`, answer: String(machines) };
+  }
+  if (type === 'PUZZLE') {
+    const words = ['planet', 'orange', 'signal', 'campus', 'cipher', 'garden', 'circle', 'bridge', 'window', 'binary', 'rocket', 'vector', 'random', 'monkey', 'silver', 'puzzle', 'hidden', 'magnet', 'switch', 'memory'];
+    const word = words[n % words.length];
+    if (variant === 0) return { prompt: `What word is formed when the letters of "${word}" are placed in alphabetical order?`, answer: word.split('').sort().join('') };
+    if (variant === 1) return { prompt: `A ${word.length}-letter code starts with the first letter of "${word}" and ends with its last letter. What is the middle letter of "${word}"?`, answer: word[Math.floor(word.length / 2)] };
+    return { prompt: `How many different letters are in the word "${word}"?`, answer: String(new Set(word.split('')).size) };
+  }
+  if (type === 'RIDDLE') {
+    const riddles = [
+      ['I have hands but cannot clap. What am I?', 'clock'],
+      ['I get wetter the more I dry. What am I?', 'towel'],
+      ['I have one eye but cannot see. What am I?', 'needle'],
+      ['I have a neck but no head. What am I?', 'bottle'],
+      ['I can be cracked, made, told, and played. What am I?', 'joke'],
+      ['I have cities but no houses and rivers but no water. What am I?', 'map'],
+      ['I am full of holes but still hold water. What am I?', 'sponge'],
+      ['I fly without wings and cry without eyes. What am I?', 'cloud'],
+      ['I have teeth but cannot bite. What am I?', 'comb'],
+      ['I am always in front of you but cannot be seen. What am I?', 'future'],
+      ['I have a thumb and four fingers but I am not alive. What am I?', 'glove'],
+      ['I come down but never go up. What am I?', 'rain'],
+      ['I have words but never speak. What am I?', 'book'],
+      ['I have a head and a tail but no body. What am I?', 'coin'],
+      ['I am lighter than a feather but no one can hold me for long. What am I?', 'breath'],
+      ['I have many keys but cannot open a single lock. What am I?', 'piano'],
+      ['I can run but never walk and have a bed but never sleep. What am I?', 'river'],
+      ['I am tall when young and short when old. What am I?', 'candle'],
+      ['I have branches but no fruit, trunk, or leaves. What am I?', 'bank'],
+      ['I can travel around the world while staying in one corner. What am I?', 'stamp'],
+    ];
+    return { prompt: riddles[n % riddles.length][0], answer: riddles[n % riddles.length][1] };
+  }
+  const left = (n % 9) + 2;
+  const right = (n % 5) + 2;
+  if (variant === 0) return { prompt: `A box has ${left} red tokens and ${right} blue tokens. How many tokens are inside?`, answer: String(left + right) };
+  if (variant === 1) return { prompt: `A team earns ${left} points in round one and twice that in round two. What is its total?`, answer: String(left * 3) };
+  return { prompt: `A route has ${left + right} checkpoints. A team has cleared ${left}. How many remain?`, answer: String(right) };
+}
+
+function makeQuestionSets(challenge) {
+  return Array.from({ length: QUESTION_SET_COUNT }, (_, setIndex) => (
+    Array.from({ length: challenge.type === 'CODING' ? 1 : 3 }, (_, questionIndex) => (
+      makeQuestion(challenge.type, challenge.number * 100 + setIndex * 3, questionIndex)
+    ))
+  ));
+}
+
 const baseRoute = challengeSeed.map((challenge) => challenge.id);
-const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, disabled: false }]));
+const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false }]));
 const teams = new Map();
 const sessions = new Map();
 const auditLog = [];
@@ -185,7 +265,7 @@ const state = {
   startedAt: new Date(),
 };
 
-for (let i = 1; i <= 40; i += 1) {
+for (let i = 1; i <= 50; i += 1) {
   const teamId = `TEAM-${String(i).padStart(2, '0')}`;
   // Rotating the route distributes starting stations while preserving the
   // separation between the two coding labs.
@@ -202,6 +282,7 @@ for (let i = 1; i <= 40; i += 1) {
     active: false,
     completedAt: null,
     currentChallenge: null,
+    questionAssignments: {},
     startedAt: null,
     completedChallenges: [],
   });
@@ -264,13 +345,33 @@ function requireAdmin(req, res, next) {
 
 function publicChallenge(challenge) {
   if (!challenge) return null;
-  const { answer, ...safeChallenge } = challenge;
+  const { answer, questionSets, ...safeChallenge } = challenge;
   return safeChallenge;
 }
 
 function getTeamChallenge(team) {
   if (!team || team.currentIndex >= team.route.length) return null;
   return challenges.get(team.route[team.currentIndex]);
+}
+
+function assignedQuestions(team, challenge) {
+  if (!challenge) return [];
+  const assignment = team.questionAssignments[challenge.id] ?? 0;
+  return challenge.questionSets[assignment] || challenge.questionSets[0] || [];
+}
+
+function assignQuestionSet(team, challenge) {
+  if (team.questionAssignments[challenge.id] !== undefined) return team.questionAssignments[challenge.id];
+  const usage = Array.from({ length: QUESTION_SET_COUNT }, () => 0);
+  for (const otherTeam of teams.values()) {
+    const assigned = otherTeam.questionAssignments?.[challenge.id];
+    if (assigned !== undefined) usage[assigned] += 1;
+  }
+  const lowestUsage = Math.min(...usage);
+  const available = usage.map((count, index) => count === lowestUsage ? index : -1).filter((index) => index >= 0);
+  const selected = available[crypto.randomInt(available.length)];
+  team.questionAssignments[challenge.id] = selected;
+  return selected;
 }
 
 function secondsOnMission(team) {
@@ -280,6 +381,12 @@ function secondsOnMission(team) {
 
 function publicTeam(team) {
   const challenge = getTeamChallenge(team);
+  const safeChallenge = publicChallenge(challenge);
+  if (safeChallenge && team.currentChallenge === challenge.id) {
+    const assignment = team.questionAssignments[challenge.id] ?? 0;
+    safeChallenge.questionSet = assignment + 1;
+    safeChallenge.questions = assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
+  }
   return {
     id: team.id,
     name: team.name,
@@ -290,7 +397,7 @@ function publicTeam(team) {
     completed: team.completedChallenges.length,
     active: team.active,
     completedAt: team.completedAt,
-    currentChallenge: publicChallenge(challenge),
+    currentChallenge: safeChallenge,
     missionStartedAt: team.startedAt,
     missionSeconds: secondsOnMission(team),
   };
@@ -420,11 +527,13 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     _id: challenge.id,
     questionNumber: challenge.number,
     code: challenge.stationCode,
-    answer: challenge.answer,
     type: challenge.type.toLowerCase(),
     difficulty: challenge.type === 'CODING' ? 'hard' : 'medium',
     name: challenge.name,
     disabled: challenges.get(challenge.id).disabled,
+    setCount: QUESTION_SET_COUNT,
+    questionsPerSet: challenge.type === 'CODING' ? 1 : 3,
+    totalQuestions: QUESTION_SET_COUNT * (challenge.type === 'CODING' ? 1 : 3),
   })));
 });
 
@@ -440,7 +549,7 @@ app.post('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
   };
   challengeSeed.push(challenge);
   baseRoute.push(id);
-  challenges.set(id, { ...challenge, disabled: false });
+  challenges.set(id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false });
   writeAudit('MISSION ADDED', `${challenge.name} added to the route`);
   res.status(201).json(challenge);
 });
@@ -500,6 +609,7 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.currentIndex = 0; team.score = 0; team.attempts = 0; team.totalSeconds = 0;
     team.active = false; team.completedAt = null; team.currentChallenge = null;
     team.startedAt = null; team.completedChallenges = [];
+    team.questionAssignments = {};
   }
   state.status = 'PAUSED';
   writeAudit('EVENT RESET', 'All team progress was cleared');
@@ -533,6 +643,7 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.currentChallenge = null;
   team.startedAt = null;
   team.completedChallenges = [];
+  team.questionAssignments = {};
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
 });
@@ -558,6 +669,7 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   if (stationTeams.length >= (challenge.type === 'CODING' ? 5 : 10)) {
     return res.status(409).json({ error: `${challenge.station} is at capacity. Please wait for the next opening.` });
   }
+  assignQuestionSet(team, challenge);
   team.currentChallenge = challenge.id;
   team.startedAt = new Date().toISOString();
   writeAudit('MISSION STARTED', `${team.id} unlocked ${challenge.name}`, team.id);
@@ -574,8 +686,11 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   }
   const elapsed = secondsOnMission(team);
   const timedOut = challenge.timeLimit > 0 && elapsed > challenge.timeLimit;
-  const submitted = String(req.body.answer || '').trim().toLowerCase();
-  const correct = !timedOut && submitted === challenge.answer.toLowerCase();
+  const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [req.body.answer];
+  const expectedQuestions = assignedQuestions(team, challenge);
+  const correct = !timedOut
+    && submittedAnswers.length === expectedQuestions.length
+    && expectedQuestions.every((question, index) => String(submittedAnswers[index] || '').trim().toLowerCase() === question.answer.toLowerCase());
   team.attempts += 1;
   if (!correct) {
     writeAudit('ANSWER MISSED', `${team.id} attempted ${challenge.name}`, team.id);
