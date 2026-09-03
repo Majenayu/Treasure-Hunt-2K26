@@ -47,7 +47,7 @@
     .login-card { width: min(440px, 100%); }
     .login-heading h2 { font: 700 34px 'Space Grotesk'; margin: 12px 0 8px; letter-spacing: -.06em; }
     .login-heading p { color: var(--muted); margin: 0 0 30px; line-height: 1.5; }
-    .tabs { background: #ebe4db; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 24px; }
+    .tabs { background: #ebe4db; border-radius: 12px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 4px; margin-bottom: 24px; }
     .tab { border: 0; padding: 11px; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 700; }
     .tab.active { color: var(--ink); background: var(--card); box-shadow: 0 2px 8px rgba(36, 20, 10, .08); }
     .field { margin: 15px 0; }
@@ -270,6 +270,7 @@
         <div class="tabs">
           <button class="tab active" data-role="admin">Admin access</button>
           <button class="tab" data-role="team">Team access</button>
+          <button class="tab" data-role="organizer">Checkpoint</button>
         </div>
         <div id="loginError" class="error hidden"></div>
         <form id="loginForm">
@@ -311,7 +312,7 @@
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-    const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'overview', timer: null };
+    const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -327,11 +328,11 @@
     const setLoginError = (message) => { $('#loginError').textContent = message; $('#loginError').classList.toggle('hidden', !message); };
     const setRole = (role) => {
       document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.role === role));
-      $('#usernameLabel').textContent = role === 'admin' ? 'Admin username' : 'Team code';
-      $('#username').placeholder = role === 'admin' ? 'e.g. majen' : 'e.g. TEAM-01';
-      $('#password').placeholder = role === 'admin' ? 'Enter password' : 'Optional team password';
+      $('#usernameLabel').textContent = role === 'admin' ? 'Admin username' : role === 'organizer' ? 'Checkpoint username' : 'Team code';
+      $('#username').placeholder = role === 'admin' ? 'e.g. majen' : role === 'organizer' ? 'e.g. coding1' : 'e.g. TEAM-01';
+      $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Optional team password';
       $('#passwordOptional').textContent = role === 'team' ? '(optional)' : '';
-      $('#loginNote').innerHTML = role === 'admin' ? 'Demo admin: <strong>majen / majen</strong>' : 'Try a demo team code: <strong>TEAM-01</strong>';
+      $('#loginNote').innerHTML = role === 'admin' ? 'Demo admin: <strong>majen / majen</strong>' : role === 'organizer' ? 'Checkpoint demo: <strong>coding1 / events</strong>' : 'Try a demo team code: <strong>TEAM-01</strong>';
     };
     document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => setRole(tab.dataset.role)));
     $('#loginForm').addEventListener('submit', async (event) => {
@@ -343,18 +344,29 @@
       } catch (error) { setLoginError(error.message); }
     });
     $('#logoutBtn').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); });
-    const adminNav = [['overview', '◌', 'Overview'], ['teams', '♧', 'Teams'], ['challenges', '✦', 'Challenges'], ['leaderboard', '↗', 'Leaderboard']];
+    const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams'], ['adminProgress', '▥', 'Progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
+    const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
     function renderNav() {
-      $('#nav').innerHTML = (state.role === 'admin' ? adminNav : teamNav).map(([id, icon, label]) => `<button class="${state.view === id ? 'active' : ''}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join('');
+      const navItems = state.role === 'admin' ? adminNav : state.role === 'organizer' ? organizerNav : teamNav;
+      $('#nav').innerHTML = navItems.map(([id, icon, label]) => `<button class="${state.view === id ? 'active' : ''}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join('');
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
     }
-    function showApp() { $('#loginScreen').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#sideUser').textContent = state.role === 'admin' ? 'majen' : state.user.name; $('#sideRole').textContent = state.role === 'admin' ? 'MISSION CONTROL' : state.user.teamId; $('#avatar').textContent = state.role === 'admin' ? 'M' : state.user.teamId.slice(-2); render(); }
+    function showApp() {
+      $('#loginScreen').classList.add('hidden'); $('#app').classList.remove('hidden');
+      state.view = state.role === 'admin' ? 'adminGame' : state.role === 'organizer' ? 'organizer' : 'mission';
+      const identity = state.role === 'admin' ? 'majen' : state.user.name || state.user.username || state.user.teamId;
+      $('#sideUser').textContent = identity;
+      $('#sideRole').textContent = state.role === 'admin' ? 'MISSION CONTROL' : state.role === 'organizer' ? state.user.checkpointLabel : state.user.teamId;
+      $('#avatar').textContent = state.role === 'admin' ? 'M' : state.role === 'organizer' ? 'C' : state.user.teamId.slice(-2);
+      render();
+    }
     async function render() {
       renderNav();
-      $('#pageTitle').textContent = state.role === 'admin' ? ({ overview: 'Mission control', teams: 'Team registry', challenges: 'Challenge stations', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
+      $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Team registry', adminProgress: 'Live progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
       try {
         if (state.role === 'admin') await renderAdmin();
+        else if (state.role === 'organizer') await renderOrganizer();
         else await renderTeam();
       } catch (error) { if (error.message.includes('sign in')) { localStorage.removeItem('codehunt_token'); location.reload(); } else showToast(error.message); }
     }
@@ -363,14 +375,16 @@
       const data = await api('/api/admin/overview');
       $('#eventStatus').innerHTML = `<span class="dot"></span> CIRCUIT ${data.event.status}`;
       $('#eventStatus').style.color = data.event.status === 'LIVE' ? 'var(--green)' : 'var(--orange-dark)';
-      if (state.view === 'overview') {
+      if (state.view === 'adminGame') {
         $('#view').innerHTML = `<div class="stats">${statCard('Teams registered', data.stats.registered, '')}${statCard('Active missions', data.stats.active, '')}${statCard('Completed teams', data.stats.completed, '')}${statCard('Points on board', data.stats.totalPoints, '')}</div>
           <div class="grid"><div><section class="card"><div class="card-heading"><div><h2 class="card-title">Station pulse</h2><p class="card-subtitle">Live occupancy across the circuit</p></div><button id="eventToggle" class="outline">${data.event.status === 'LIVE' ? 'Pause event' : 'Resume event'}</button></div><div class="station-list">${data.stations.map((station) => `<div class="station-row"><div><div class="station-name">${station.name}</div><div class="station-type">${station.type} · ${station.count ? 'in progress' : 'available'}</div></div><div class="bar"><i style="width:${Math.min(100, station.count / station.capacity * 100)}%"></i></div><div class="capacity">${station.count}/${station.capacity}</div></div>`).join('')}</div></section>
-          <section class="card"><div class="card-heading"><div><h2 class="card-title">Team activity</h2><p class="card-subtitle">The latest moves in the circuit</p></div><button class="outline" data-view="teams">View all</button></div><div class="activity">${data.activity.length ? data.activity.map((item) => `<div class="activity-row"><i class="activity-mark"></i><div><strong>${escapeHtml(item.action)} <span style="font-weight:400;color:var(--muted)">· ${escapeHtml(item.detail)}</span></strong><time>${escapeHtml(item.actor)} · ${new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div></div>`).join('') : '<p class="card-subtitle">No activity yet. Teams will appear here as they move.</p>'}</div></section></div>
-          <div><section class="card"><div class="card-heading"><div><h2 class="card-title">Route map</h2><p class="card-subtitle">Ten stations · controlled sequence</p></div></div><div class="challenge-list">${data.challenges.slice(0, 6).map(challengeRow).join('')}</div><button class="outline wide" data-view="challenges">Open all stations ↗</button></section></div></div>`;
+          <section class="card"><div class="card-heading"><div><h2 class="card-title">Team activity</h2><p class="card-subtitle">The latest moves in the circuit</p></div><button class="outline" data-view="adminTeams">View all</button></div><div class="activity">${data.activity.length ? data.activity.map((item) => `<div class="activity-row"><i class="activity-mark"></i><div><strong>${escapeHtml(item.action)} <span style="font-weight:400;color:var(--muted)">· ${escapeHtml(item.detail)}</span></strong><time>${escapeHtml(item.actor)} · ${new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div></div>`).join('') : '<p class="card-subtitle">No activity yet. Teams will appear here as they move.</p>'}</div></section></div>
+           <div><section class="card"><div class="card-heading"><div><h2 class="card-title">Route map</h2><p class="card-subtitle">Ten stations · controlled sequence</p></div></div><div class="challenge-list">${data.challenges.slice(0, 6).map(challengeRow).join('')}</div><button class="outline wide" data-view="adminCheckpoints">Open all locations ↗</button></section></div></div>`;
         $('#eventToggle').addEventListener('click', async () => { await api('/api/admin/event', { method: 'POST' }); render(); });
-      } else if (state.view === 'teams') renderTeams();
-      else if (state.view === 'challenges') renderChallenges(data.challenges);
+      } else if (state.view === 'adminQuestions') await renderQuestions();
+      else if (state.view === 'adminCheckpoints') await renderCheckpoints();
+      else if (state.view === 'adminTeams') await renderTeams();
+      else if (state.view === 'adminProgress') await renderProgress();
       else renderLeaderboard((await api('/api/leaderboard')).leaderboard);
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
     }
@@ -383,6 +397,21 @@
     function renderChallenges(challenges) {
       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Challenge stations</h2><p class="card-subtitle">Disable a station if a physical location needs attention.</p></div><span class="tag">10 STATIONS</span></div><div class="challenge-list">${challenges.map(challengeRow).join('')}</div></section>`;
       document.querySelectorAll('[data-challenge]').forEach((button) => button.addEventListener('click', async () => { await api(`/api/admin/challenges/${button.dataset.challenge}/toggle`, { method: 'POST' }); showToast('Station status updated.'); render(); }));
+    }
+    async function renderQuestions() {
+      const questions = await api('/api/admin/questions');
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Question bank</h2><p class="card-subtitle">Manage the prompts teams encounter at each checkpoint.</p></div><span class="tag">${questions.length} QUESTIONS</span></div><form id="questionForm" style="display:grid;grid-template-columns:1.2fr 1fr .7fr auto;gap:10px;align-items:end;margin-bottom:20px"><div class="field" style="margin:0"><label>Mission name</label><input name="name" placeholder="e.g. Bonus signal" required></div><div class="field" style="margin:0"><label>Answer</label><input name="answer" placeholder="Expected answer" required></div><div class="field" style="margin:0"><label>Type</label><input name="type" placeholder="mystery" value="mystery"></div><button class="primary" type="submit">Add question</button></form><div class="challenge-list">${questions.map((question) => `<div class="challenge-row"><span class="challenge-index">0${question.questionNumber}</span><div class="challenge-info"><strong>${escapeHtml(question.name)}</strong><span>${escapeHtml(question.code)} · answer configured · ${escapeHtml(question.difficulty)}</span></div><span class="tag">${escapeHtml(question.type)}</span><button class="outline delete-question" data-question="${question._id}">Delete</button></div>`).join('')}</div></section>`;
+      $('#questionForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await api('/api/admin/questions', { method: 'POST', body: JSON.stringify({ name: form.get('name'), answer: form.get('answer'), type: form.get('type') }) }); showToast('Question added to the route.'); render(); });
+      document.querySelectorAll('.delete-question').forEach((button) => button.addEventListener('click', async () => { if (confirm('Remove this question from the route?')) { await api(`/api/admin/questions/${button.dataset.question}`, { method: 'DELETE' }); showToast('Question removed.'); render(); } }));
+    }
+    async function renderCheckpoints() {
+      const checkpoints = await api('/api/admin/checkpoints');
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Checkpoint locations</h2><p class="card-subtitle">The physical route teams follow through the event.</p></div><span class="tag">ROUTE MAP</span></div><div class="station-list">${checkpoints.map((checkpoint, index) => `<div class="station-row"><div><div class="station-name"><span class="mono" style="color:var(--orange)">0${index + 1}</span> ${escapeHtml(checkpoint.name)}</div><div class="station-type">${escapeHtml(checkpoint.label)} · ${escapeHtml(checkpoint.locationHint)}</div></div><div><span class="tag">${escapeHtml(checkpoint.type)}</span></div><div class="capacity mono">${escapeHtml(checkpoint.stationCode)}</div></div>`).join('')}</div><form id="locationForm" style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;border-top:1px solid rgba(255,255,255,.07);padding-top:20px;margin-top:10px"><div class="field" style="margin:0"><label>Location label</label><input name="name" placeholder="New station note" required></div><div class="field" style="margin:0"><label>Location hint</label><input name="locationHint" placeholder="Building · floor"></div><button class="primary" type="submit">Save location</button></form></section>`;
+      $('#locationForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await api('/api/admin/checkpoints', { method: 'POST', body: JSON.stringify({ name: form.get('name'), locationHint: form.get('locationHint') }) }); showToast('Location note saved.'); event.currentTarget.reset(); });
+    }
+    async function renderProgress() {
+      const progress = await api('/api/admin/progress');
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live progress</h2><p class="card-subtitle">Monitor every team’s route position and score.</p></div><span class="tag">REAL TIME</span></div><div style="overflow:auto"><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Current checkpoint</th><th>Cleared</th><th>Attempts</th><th>Points</th></tr></thead><tbody>${progress.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${escapeHtml(team.currentMission)}</td><td>${team.completed}/10</td><td class="mono">${team.attempts}</td><td class="mono" style="color:var(--orange)">${team.score}</td></tr>`).join('')}</tbody></table></div></section>`;
     }
     function renderLeaderboard(board) {
       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live leaderboard</h2><p class="card-subtitle">Score first · fastest completion breaks ties · attempts third</p></div><span class="tag">LIVE</span></div><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Progress</th><th>Score</th><th>Time</th></tr></thead><tbody>${board.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${team.completed}/10</td><td class="mono">${team.score} pts</td><td class="mono">${formatTime(team.totalSeconds)}</td></tr>`).join('')}</tbody></table></section>`;
@@ -400,6 +429,13 @@
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
       if (team.currentChallenge) { clearTimeout(state.timer); state.timer = setTimeout(render, 1000); }
+    }
+    async function renderOrganizer() {
+      if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
+      const data = await api('/api/organizer/checkpoint-teams');
+      $('#eventStatus').innerHTML = `<span class="dot"></span> CHECKPOINT ${escapeHtml(data.checkpointLabel)}`;
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">${escapeHtml(data.checkpointLabel)} checkpoint console</h2><p class="card-subtitle">Verify teams as they arrive at your station.</p></div><span class="tag">ORGANIZER</span></div>${data.teams.length ? `<div class="challenge-list">${data.teams.map((team) => `<div class="challenge-row"><span class="challenge-index">${escapeHtml(team.id.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.name)}</strong><span>${team.completed}/10 cleared · ${team.score} points</span></div><span class="status ${team.active ? '' : 'ready'}">${team.active ? 'ON MISSION' : 'READY'}</span><button class="outline verify-team" data-team="${team.id}">Verify</button></div>`).join('')}</div>` : '<p class="card-subtitle">No teams are currently assigned to this checkpoint.</p>'}</section>`;
+      document.querySelectorAll('.verify-team').forEach((button) => button.addEventListener('click', async () => { await api('/api/organizer/mark-status', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, status: 'completed' }) }); showToast('Checkpoint verification logged.'); render(); }));
     }
     async function startMission() {
       const code = prompt('Enter the station code from the location:', '');

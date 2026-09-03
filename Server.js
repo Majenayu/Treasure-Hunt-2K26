@@ -352,6 +352,24 @@ app.post('/api/login', loginLimiter, (req, res) => {
     return res.json({ token, user: { role: 'admin', username: ADMIN_USERNAME } });
   }
 
+  const organizerAccounts = {
+    tracing1: { checkpointType: 'tracing', checkpointLabel: 'T1' },
+    tracing2: { checkpointType: 'tracing', checkpointLabel: 'T2' },
+    coding1: { checkpointType: 'coding', checkpointLabel: 'C1' },
+    coding2: { checkpointType: 'coding', checkpointLabel: 'C2' },
+    activity1: { checkpointType: 'activity', checkpointLabel: 'T4' },
+    activity2: { checkpointType: 'activity', checkpointLabel: 'T5' },
+    activity3: { checkpointType: 'activity', checkpointLabel: 'T6' },
+  };
+  if (role === 'organizer') {
+    const account = organizerAccounts[username.trim().toLowerCase()];
+    if (!account || password !== 'events') return res.status(401).json({ error: 'Use a valid organizer account.' });
+    const token = crypto.randomBytes(24).toString('hex');
+    sessions.set(token, { role: 'organizer', username: username.trim().toLowerCase(), ...account });
+    writeAudit('ORGANIZER CONNECTED', `${account.checkpointLabel} checkpoint console opened`);
+    return res.json({ token, user: { role: 'organizer', username: username.trim().toLowerCase(), ...account } });
+  }
+
   const teamId = username.trim().toUpperCase();
   const team = teams.get(teamId);
   if (!team || (password && password !== TEAM_PASSWORD)) {
@@ -370,9 +388,21 @@ app.post('/api/logout', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/me', requireAuth, (req, res) => res.json(req.user));
+
 app.get('/api/session', requireAuth, (req, res) => {
   const team = req.user.role === 'team' ? teams.get(req.user.teamId) : null;
   res.json({ user: req.user, team: team ? publicTeam(team) : null });
+});
+
+app.get('/api/game-state', (req, res) => {
+  res.json({
+    started: state.status === 'LIVE',
+    status: state.status,
+    eventName: state.eventName,
+    finalCodingStarted: false,
+    roundPaused: state.status === 'PAUSED',
+  });
 });
 
 app.get('/api/leaderboard', (req, res) => res.json({ leaderboard: leaderboard() }));
@@ -385,10 +415,101 @@ app.get('/api/admin/teams', requireAuth, requireAdmin, (req, res) => {
   res.json({ teams: [...teams.values()].map(publicTeam) });
 });
 
+app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
+  res.json(challengeSeed.map((challenge) => ({
+    _id: challenge.id,
+    questionNumber: challenge.number,
+    code: challenge.stationCode,
+    answer: challenge.answer,
+    type: challenge.type.toLowerCase(),
+    difficulty: challenge.type === 'CODING' ? 'hard' : 'medium',
+    name: challenge.name,
+    disabled: challenges.get(challenge.id).disabled,
+  })));
+});
+
+app.post('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
+  const { answer = '', name = 'New mission', type = 'mystery' } = req.body || {};
+  const nextNumber = challengeSeed.length + 1;
+  const id = `custom-${nextNumber}`;
+  const challenge = {
+    id, number: nextNumber, name, type: String(type).toUpperCase(), icon: '✦',
+    station: 'NEW STATION', stationCode: `NEW-${String(nextNumber).padStart(2, '0')}`,
+    location: 'To be announced', color: 'amber', timeLimit: 0, points: 100,
+    prompt: 'A new mission is ready for your event.', answer: String(answer).toLowerCase(), hint: 'Ask the mission controller.',
+  };
+  challengeSeed.push(challenge);
+  baseRoute.push(id);
+  challenges.set(id, { ...challenge, disabled: false });
+  writeAudit('MISSION ADDED', `${challenge.name} added to the route`);
+  res.status(201).json(challenge);
+});
+
+app.delete('/api/admin/questions/:id', requireAuth, requireAdmin, (req, res) => {
+  const index = challengeSeed.findIndex((challenge) => challenge.id === req.params.id);
+  if (index < 0) return res.status(404).json({ error: 'Mission not found.' });
+  const [removed] = challengeSeed.splice(index, 1);
+  challenges.delete(removed.id);
+  const routeIndex = baseRoute.indexOf(removed.id);
+  if (routeIndex >= 0) baseRoute.splice(routeIndex, 1);
+  writeAudit('MISSION REMOVED', `${removed.name} removed from the route`);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/checkpoints', requireAuth, requireAdmin, (req, res) => {
+  res.json(challengeSeed.map((challenge) => ({
+    label: challenge.station,
+    name: challenge.name,
+    locationHint: challenge.location,
+    type: challenge.type.toLowerCase(),
+    stationCode: challenge.stationCode,
+    capacity: challenge.type === 'CODING' ? 5 : 10,
+    disabled: challenges.get(challenge.id).disabled,
+  })));
+});
+
+app.post('/api/admin/checkpoints', requireAuth, requireAdmin, (req, res) => {
+  const { name = 'New checkpoint', locationHint = 'To be announced' } = req.body || {};
+  writeAudit('LOCATION NOTE ADDED', `${name} · ${locationHint}`);
+  res.status(201).json({ ok: true, message: 'Location note saved.' });
+});
+
+app.get('/api/admin/progress', requireAuth, requireAdmin, (req, res) => {
+  res.json(leaderboard().map((entry) => ({
+    ...entry,
+    currentMission: teams.get(entry.id) ? publicChallenge(getTeamChallenge(teams.get(entry.id)))?.name || 'Finished' : '—',
+    attempts: teams.get(entry.id)?.attempts || 0,
+  })));
+});
+
 app.post('/api/admin/event', requireAuth, requireAdmin, (req, res) => {
   state.status = state.status === 'LIVE' ? 'PAUSED' : 'LIVE';
   writeAudit(state.status === 'LIVE' ? 'EVENT RESUMED' : 'EVENT PAUSED', `Circuit is now ${state.status.toLowerCase()}`);
   res.json({ ok: true, status: state.status });
+});
+
+app.post('/api/admin/start-event', requireAuth, requireAdmin, (req, res) => {
+  state.status = 'LIVE';
+  state.startedAt = new Date();
+  writeAudit('EVENT STARTED', 'The Orange Circuit is live');
+  res.json({ ok: true, started: true });
+});
+
+app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
+  for (const team of teams.values()) {
+    team.currentIndex = 0; team.score = 0; team.attempts = 0; team.totalSeconds = 0;
+    team.active = false; team.completedAt = null; team.currentChallenge = null;
+    team.startedAt = null; team.completedChallenges = [];
+  }
+  state.status = 'PAUSED';
+  writeAudit('EVENT RESET', 'All team progress was cleared');
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/toggle-round', requireAuth, requireAdmin, (req, res) => {
+  state.status = state.status === 'LIVE' ? 'PAUSED' : 'LIVE';
+  writeAudit(state.status === 'LIVE' ? 'ROUND RESUMED' : 'ROUND PAUSED', `Round is now ${state.status.toLowerCase()}`);
+  res.json({ ok: true, roundPaused: state.status === 'PAUSED' });
 });
 
 app.post('/api/admin/challenges/:number/toggle', requireAuth, requireAdmin, (req, res) => {
@@ -473,6 +594,22 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   }
   writeAudit('MISSION CLEARED', `${team.id} completed ${challenge.name}`, team.id);
   res.json({ ok: true, correct: true, score: team.score, team: publicTeam(team) });
+});
+
+app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
+  if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  const station = req.user.checkpointLabel;
+  const rows = [...teams.values()].filter((team) => !req.user.checkpointType || getTeamChallenge(team)?.type.toLowerCase() === req.user.checkpointType)
+    .map((team) => ({ ...publicTeam(team), checkpointLabel: station }));
+  res.json({ checkpointLabel: station || 'ALL', teams: rows });
+});
+
+app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
+  if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  const team = teams.get(String(req.body.teamId || '').toUpperCase());
+  if (!team) return res.status(404).json({ error: 'Team not found.' });
+  writeAudit('CHECKPOINT UPDATED', `${team.id} marked ${req.body.status || 'complete'}`, req.user.username);
+  res.json({ ok: true, points: req.body.status === 'completed' ? 100 : 0 });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
