@@ -1,8 +1,8 @@
 // CodeHunt 2K26 — Service Worker
 // Caches static assets, serves API fresh from network, handles push notifications
 
-const CACHE_NAME = 'codehunt-v1';
-const STATIC_ASSETS = ['/'];
+const CACHE_NAME = 'codehunt-orange-v2';
+const STATIC_ASSETS = [];
 
 // Install: cache the shell
 self.addEventListener('install', e => {
@@ -35,18 +35,15 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Static (HTML/CSS/JS): cache first, fall back to network
+  // Keep the app shell fresh so new event themes are visible immediately.
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        }
-        return res;
-      });
-    })
+    fetch(e.request).then(res => {
+      if (res.ok && e.request.method === 'GET' && url.pathname !== '/') {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+      }
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
 
