@@ -26,7 +26,8 @@
       --radius: 20px;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; color: var(--ink); background: var(--paper); font-family: 'DM Sans', sans-serif; }
+    html { overflow-x: hidden; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: 'DM Sans', sans-serif; overflow-x: hidden; }
     button, input { font: inherit; }
     button { cursor: pointer; }
     .hidden { display: none !important; }
@@ -126,11 +127,17 @@
     .toggle.on { background: var(--orange); }
     .toggle.on i { transform: translateX(14px); }
     .table { width: 100%; border-collapse: collapse; }
+    .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-color: var(--orange) transparent; }
+    .table-scroll .table { min-width: 640px; }
     .table th { text-align: left; color: var(--muted); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .08em; padding: 9px 7px; border-bottom: 1px solid var(--line); }
     .table td { padding: 14px 7px; border-bottom: 1px solid #eee8e1; font-size: 12px; }
     .table tr:last-child td { border: 0; }
     .team-name { font-weight: 700; }
     .team-id { color: var(--muted); font: 10px 'DM Mono'; margin-top: 3px; }
+    .team-progress-cell { min-width: 130px; }
+    .team-progress-label { display: flex; justify-content: space-between; gap: 10px; font: 10px 'DM Mono'; color: rgba(180,200,255,.65); margin-bottom: 6px; }
+    .team-progress-track { height: 6px; border-radius: 99px; overflow: hidden; background: #111e35; }
+    .team-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f26a3d, #ffb04a); }
     .status { font: 500 9px 'DM Mono'; color: var(--green); }
     .status.ready { color: var(--muted); }
     .status.finished { color: var(--orange-dark); }
@@ -185,23 +192,31 @@
       .sidebar { position: fixed; width: 100%; height: 64px; bottom: 0; z-index: 10; padding: 0 10px; flex-direction: row; align-items: center; }
       .sidebar .brand, .side-label, .sidebar-bottom { display: none; }
       .nav { width: 100%; display: flex; justify-content: space-around; }
-      .nav button { flex-direction: column; gap: 2px; text-align: center; font-size: 10px; padding: 8px; }
+      .nav button { flex: 1; min-width: 0; flex-direction: column; gap: 2px; text-align: center; font-size: 10px; padding: 8px 4px; }
       .nav-icon { font-size: 17px; }
       .content { padding-bottom: 64px; }
       .topbar { padding: 0 17px; height: 70px; }
       .topbar h1 { font-size: 21px; }
+      .page-kicker { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 63vw; }
+      .live-status { padding: 7px 9px; font-size: 9px; white-space: nowrap; }
       .page { padding: 25px 17px 35px; }
       .stats { gap: 9px; }
       .stat { padding: 16px; min-height: 100px; }
       .stat-value { font-size: 28px; margin-top: 12px; }
       .card { padding: 18px; border-radius: 16px; }
+      .card-heading { flex-wrap: wrap; }
+      .card-heading > :first-child { min-width: 0; }
+      .card-heading .outline, .card-heading .primary { flex: 1 0 100%; }
       .team-hero { padding: 24px; display: block; border-radius: 19px; }
       .team-hero h2 { font-size: 35px; }
       .hero-score { text-align: left; margin-top: 25px; }
       .hero-score strong { font-size: 32px; }
       .team-columns { gap: 15px; }
       .station-row { grid-template-columns: 1fr 75px 44px; gap: 8px; }
-      .table th:nth-child(3), .table td:nth-child(3) { display: none; }
+      .table-scroll:after { content: 'Swipe to see more →'; display: block; color: rgba(180,200,255,.48); font: 9px 'DM Mono'; letter-spacing: .05em; padding: 8px 7px 0; }
+      .table th, .table td { white-space: nowrap; }
+      .location-form { grid-template-columns: 1fr !important; }
+      .location-form .primary { width: 100%; }
     }
     /* Original CodeHunt mission-control skin, recolored for the orange event. */
     body { background: #03050f; color: #eaf0ff; }
@@ -358,7 +373,7 @@
       } catch (error) { setLoginError(error.message); }
     });
     $('#logoutBtn').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); });
-    const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams'], ['adminProgress', '▥', 'Progress'], ['leaderboard', '↗', 'Leaderboard']];
+     const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
     const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
     function renderNav() {
@@ -377,7 +392,7 @@
     }
     async function render() {
       renderNav();
-      $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Team registry', adminProgress: 'Live progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
+       $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Teams & progress', adminProgress: 'Teams & progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
       try {
         if (state.role === 'admin') await renderAdmin();
         else if (state.role === 'organizer') await renderOrganizer();
@@ -397,15 +412,18 @@
         $('#eventToggle').addEventListener('click', async () => { await api('/api/admin/event', { method: 'POST' }); render(); });
       } else if (state.view === 'adminQuestions') await renderQuestions();
       else if (state.view === 'adminCheckpoints') await renderCheckpoints();
-      else if (state.view === 'adminTeams') await renderTeams();
-      else if (state.view === 'adminProgress') await renderProgress();
+       else if (state.view === 'adminTeams' || state.view === 'adminProgress') await renderTeams();
       else renderLeaderboard((await api('/api/leaderboard')).leaderboard);
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
     }
     function challengeRow(challenge) { return `<div class="challenge-row"><span class="challenge-index">0${challenge.number}</span><div class="challenge-info"><strong>${escapeHtml(challenge.name)}</strong><span>${escapeHtml(challenge.station)} · ${challenge.activeTeams || 0} teams live</span></div><span class="tag">${challenge.type}</span><button class="toggle ${challenge.disabled ? '' : 'on'}" data-challenge="${challenge.number}" title="Toggle station"><i></i></button></div>`; }
     async function renderTeams() {
       const { teams } = await api('/api/admin/teams');
-      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">All teams</h2><p class="card-subtitle">${teams.length} teams provisioned for the circuit</p></div><span class="tag">IN MEMORY</span></div><div style="overflow:auto"><table class="table"><thead><tr><th>Team</th><th>Mission</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody>${teams.map((team) => `<tr><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${team.completed}/10</td><td class="mono">${team.score} pts</td><td class="status ${team.completedAt ? 'finished' : team.active ? '' : 'ready'}">${team.completedAt ? 'FINISHED' : team.active ? 'ON MISSION' : 'READY'}</td><td><button class="outline reset-team" data-team="${team.id}">Reset</button></td></tr>`).join('')}</tbody></table></div></section>`;
+       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Teams & progress</h2><p class="card-subtitle">${teams.length} teams · live route position, score, and status in one view</p></div><span class="tag">LIVE</span></div><div class="table-scroll"><table class="table"><thead><tr><th>Team</th><th>Progress</th><th>Current checkpoint</th><th>Score</th><th>Status</th><th></th></tr></thead><tbody>${teams.map((team) => {
+         const progress = Math.min(100, team.completed * 10);
+         const currentMission = team.completed >= 10 ? 'Circuit complete' : team.currentChallenge?.name || 'Not started';
+         return `<tr><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td class="team-progress-cell"><div class="team-progress-label"><span>${team.completed} / 10</span><span>${progress}%</span></div><div class="team-progress-track"><i style="width:${progress}%"></i></div></td><td>${escapeHtml(currentMission)}</td><td class="mono">${team.score} pts</td><td class="status ${team.completedAt ? 'finished' : team.active ? '' : 'ready'}">${team.completedAt ? 'FINISHED' : team.active ? 'ON MISSION' : 'READY'}</td><td><button class="outline reset-team" data-team="${team.id}">Reset</button></td></tr>`;
+       }).join('')}</tbody></table></div></section>`;
       document.querySelectorAll('.reset-team').forEach((button) => button.addEventListener('click', async () => { if (confirm(`Reset ${button.dataset.team}?`)) { await api(`/api/admin/teams/${button.dataset.team}/reset`, { method: 'POST' }); showToast('Team progress reset.'); render(); } }));
     }
     function renderChallenges(challenges) {
@@ -424,31 +442,31 @@
     }
     async function renderCheckpoints() {
       const checkpoints = await api('/api/admin/checkpoints');
-      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Checkpoint locations</h2><p class="card-subtitle">The physical route teams follow through the event.</p></div><span class="tag">ROUTE MAP</span></div><div class="station-list">${checkpoints.map((checkpoint, index) => `<div class="station-row"><div><div class="station-name"><span class="mono" style="color:var(--orange)">0${index + 1}</span> ${escapeHtml(checkpoint.name)}</div><div class="station-type">${escapeHtml(checkpoint.label)} · ${escapeHtml(checkpoint.locationHint)}</div></div><div><span class="tag">${escapeHtml(checkpoint.type)}</span></div><div class="capacity mono">${escapeHtml(checkpoint.stationCode)}</div></div>`).join('')}</div><form id="locationForm" style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;border-top:1px solid rgba(255,255,255,.07);padding-top:20px;margin-top:10px"><div class="field" style="margin:0"><label>Location label</label><input name="name" placeholder="New station note" required></div><div class="field" style="margin:0"><label>Location hint</label><input name="locationHint" placeholder="Building · floor"></div><button class="primary" type="submit">Save location</button></form></section>`;
+       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Checkpoint locations</h2><p class="card-subtitle">The physical route teams follow through the event.</p></div><span class="tag">ROUTE MAP</span></div><div class="station-list">${checkpoints.map((checkpoint, index) => `<div class="station-row"><div><div class="station-name"><span class="mono" style="color:var(--orange)">0${index + 1}</span> ${escapeHtml(checkpoint.name)}</div><div class="station-type">${escapeHtml(checkpoint.label)} · ${escapeHtml(checkpoint.locationHint)}</div></div><div><span class="tag">${escapeHtml(checkpoint.type)}</span></div><div class="capacity mono">${escapeHtml(checkpoint.stationCode)}</div></div>`).join('')}</div><form id="locationForm" class="location-form" style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;border-top:1px solid rgba(255,255,255,.07);padding-top:20px;margin-top:10px"><div class="field" style="margin:0"><label>Location label</label><input name="name" placeholder="New station note" required></div><div class="field" style="margin:0"><label>Location hint</label><input name="locationHint" placeholder="Building · floor"></div><button class="primary" type="submit">Save location</button></form></section>`;
       $('#locationForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); await api('/api/admin/checkpoints', { method: 'POST', body: JSON.stringify({ name: form.get('name'), locationHint: form.get('locationHint') }) }); showToast('Location note saved.'); event.currentTarget.reset(); });
     }
     async function renderProgress() {
       const progress = await api('/api/admin/progress');
-      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live progress</h2><p class="card-subtitle">Monitor every team’s route position and score.</p></div><span class="tag">REAL TIME</span></div><div style="overflow:auto"><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Current checkpoint</th><th>Cleared</th><th>Attempts</th><th>Points</th></tr></thead><tbody>${progress.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${escapeHtml(team.currentMission)}</td><td>${team.completed}/10</td><td class="mono">${team.attempts}</td><td class="mono" style="color:var(--orange)">${team.score}</td></tr>`).join('')}</tbody></table></div></section>`;
+       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live progress</h2><p class="card-subtitle">Monitor every team’s route position and score.</p></div><span class="tag">REAL TIME</span></div><div class="table-scroll"><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Current checkpoint</th><th>Cleared</th><th>Attempts</th><th>Points</th></tr></thead><tbody>${progress.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${escapeHtml(team.currentMission)}</td><td>${team.completed}/10</td><td class="mono">${team.attempts}</td><td class="mono" style="color:var(--orange)">${team.score}</td></tr>`).join('')}</tbody></table></div></section>`;
     }
     function renderLeaderboard(board) {
-      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live leaderboard</h2><p class="card-subtitle">Score first · fastest completion breaks ties · attempts third</p></div><span class="tag">LIVE</span></div><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Progress</th><th>Score</th><th>Time</th></tr></thead><tbody>${board.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${team.completed}/10</td><td class="mono">${team.score} pts</td><td class="mono">${formatTime(team.totalSeconds)}</td></tr>`).join('')}</tbody></table></section>`;
+       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Live leaderboard</h2><p class="card-subtitle">Score first · fastest completion breaks ties · attempts third</p></div><span class="tag">LIVE</span></div><div class="table-scroll"><table class="table"><thead><tr><th>Rank</th><th>Team</th><th>Progress</th><th>Score</th><th>Time</th></tr></thead><tbody>${board.map((team) => `<tr><td class="mono">#${String(team.rank).padStart(2, '0')}</td><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td>${team.completed}/10</td><td class="mono">${team.score} pts</td><td class="mono">${formatTime(team.totalSeconds)}</td></tr>`).join('')}</tbody></table></div></section>`;
     }
     async function renderTeam() {
       const data = await api('/api/team/state');
       const team = data.team;
       $('#eventStatus').innerHTML = `<span class="dot"></span> CIRCUIT ${data.event.status}`;
       if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
-      const challenge = team.currentChallenge;
+       const challenge = team.currentChallenge;
       const complete = team.completed >= 10;
-      const waitingForVolunteer = ['PUZZLE', 'LOGIC'].includes(challenge.type);
-      const questionCards = (challenge.questions || []).map((question, index) => {
+       const waitingForVolunteer = challenge && ['PUZZLE', 'LOGIC'].includes(challenge.type);
+       const questionCards = (challenge?.questions || []).map((question, index) => {
         const answerControl = question.options
           ? `<div class="quiz-options">${question.options.map((option) => `<label class="quiz-option"><input type="radio" name="quiz-${index}" class="mission-quiz-answer" data-answer-index="${index}" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join('')}</div>`
           : `<div class="field"><label for="answer-${index}">Your answer</label><input id="answer-${index}" class="mission-answer" data-answer-index="${index}" placeholder="Type your answer" autocomplete="off"></div>`;
         return `<div class="question-card"><div class="question-number">Question ${index + 1}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
       }).join('');
-      const roundLabel = challenge.quizRound ? `QUIZ ROUND ${challenge.quizRound} · 20 QUESTIONS` : challenge.questionSet ? `SET ${challenge.questionSet} / ${challenge.type === 'RIDDLE' ? '1' : challenge.type === 'CODING' ? '5' : '10'}` : '';
+       const roundLabel = challenge?.quizRound ? `QUIZ ROUND ${challenge.quizRound} · 20 QUESTIONS` : challenge?.questionSet ? `SET ${challenge.questionSet} / ${challenge.type === 'RIDDLE' ? '1' : challenge.type === 'CODING' ? '5' : '10'}` : '';
       const waitingContent = waitingForVolunteer
         ? `<div class="mission-kicker">Checkpoint verification required</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">Reach ${escapeHtml(challenge.location)} and give your team code to the checkpoint volunteer. Your three ${escapeHtml(challenge.type.toLowerCase())} clues will appear after they enter the secret code.</p>`
         : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><button id="startMission" class="primary">Unlock station ↗</button><p class="card-subtitle" style="margin-top:14px">Enter the station code provided at the checkpoint.</p>`;
