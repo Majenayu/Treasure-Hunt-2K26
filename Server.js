@@ -179,6 +179,82 @@ const challengeSeed = [
 ];
 
 const QUESTION_SET_COUNT = 10;
+const CODING_QUESTIONS = [
+  { prompt: 'What is the output of: 2 + 3 * 4?', answer: '14' },
+  { prompt: 'A loop starts at 1 and doubles four times. What number does it finish on?', answer: '16' },
+  { prompt: 'What is the output of: let x = 7; x += 5; console.log(x);', answer: '12' },
+  { prompt: 'What is the output of: [4, 8, 15, 16, 23, 42][2]?', answer: '15' },
+  { prompt: 'How many times does this loop print: for (let i = 0; i < 5; i++)?', answer: '5' },
+  { prompt: 'What is the output of: 10 % 3?', answer: '1' },
+  { prompt: 'A function returns n * n. What does it return when n is 9?', answer: '81' },
+  { prompt: 'What is the output of: "Code" + "Hunt"?', answer: 'CodeHunt' },
+  { prompt: 'If a binary value is 1010, what is its decimal value?', answer: '10' },
+  { prompt: 'An array has 6 items. What is the index of its last item?', answer: '5' },
+];
+const LOGIC_QUESTIONS = [
+  ['Complete: 2, 4, 8, 16, __', '32'],
+  ['Complete: 3, 6, 11, 18, 27, __', '38'],
+  ['If five machines make five parts in five minutes, how long do 100 machines need to make 100 parts?', '5'],
+  ['A clock shows 3:15. What is the smaller angle between its hands?', '7.5'],
+  ['A is older than B. B is older than C. Who is youngest?', 'C'],
+  ['Complete: 1, 4, 9, 16, 25, __', '36'],
+  ['A train travels 60 km in 1 hour. How far does it travel in 3 hours?', '180'],
+  ['If today is Monday, what day is it 10 days from today?', 'Thursday'],
+  ['A basket has 12 apples. Half are removed. How many remain?', '6'],
+  ['Complete: 5, 10, 20, 40, __', '80'],
+  ['Two fathers and two sons share three apples equally. How many people are there?', '3'],
+  ['A room has four corners. One cat sits in each corner. How many cats are in the room?', '4'],
+  ['If all Bloops are Razzies and all Razzies are Lazzies, are all Bloops Lazzies?', 'yes'],
+  ['A team scores 8 points in each of 6 rounds. What is the total?', '48'],
+  ['Complete: 100, 90, 81, 73, __', '66'],
+  ['A shirt costs 800 and is discounted by 25%. What is the sale price?', '600'],
+  ['There are 24 students in 4 equal groups. How many students per group?', '6'],
+  ['A number is greater than 20 and less than 30, and divisible by 3 and 4. What is it?', '24'],
+  ['Complete: 1, 1, 2, 3, 5, 8, __', '13'],
+  ['A farmer has chickens and cows: 10 heads and 28 legs. How many cows?', '4'],
+  ['If 3 pencils cost 15, what do 8 pencils cost at the same rate?', '40'],
+  ['A meeting starts at 10:20 and lasts 45 minutes. When does it end?', '11:05'],
+  ['Complete: 7, 14, 28, 56, __', '112'],
+  ['A box contains 3 red, 4 blue, and 5 green balls. How many balls total?', '12'],
+  ['You face north, turn right, then turn around. Which direction do you face?', 'south'],
+  ['A bus has 18 passengers. 7 leave and 4 enter. How many are on the bus?', '15'],
+  ['Complete: 81, 27, 9, 3, __', '1'],
+  ['A code has 4 digits, each can be 0 or 1. How many different codes are possible?', '16'],
+  ['If 2 workers finish a job in 6 days, how many worker-days is the job?', '12'],
+  ['A rectangle is 8 units long and 3 units wide. What is its area?', '24'],
+].map(([prompt, answer]) => ({ prompt, answer }));
+const PUZZLE_QUESTIONS = [
+  ['What word becomes shorter when you add two letters to it?', 'short'],
+  ['What can travel around the world while staying in one corner?', 'stamp'],
+  ['What has keys but cannot open locks, space but no room, and you can enter but not go inside?', 'keyboard'],
+  ['I speak without a mouth and hear without ears. What am I?', 'echo'],
+  ['I get wetter the more I dry. What am I?', 'towel'],
+  ['I have hands but cannot clap. What am I?', 'clock'],
+  ['I have one eye but cannot see. What am I?', 'needle'],
+  ['I have a neck but no head. What am I?', 'bottle'],
+  ['I have a head and a tail but no body. What am I?', 'coin'],
+  ['I have cities but no houses and rivers but no water. What am I?', 'map'],
+  ['What word is spelled incorrectly in every dictionary?', 'incorrectly'],
+  ['What begins with E, ends with E, but contains only one letter?', 'envelope'],
+  ['What appears once in a minute, twice in a moment, and never in a thousand years?', 'm'],
+  ['What has four legs in the morning, two at noon, and three in the evening?', 'human'],
+  ['What can be cracked, made, told, and played?', 'joke'],
+  ['Rearrange LISTEN to form a word meaning quiet.', 'silent'],
+  ['What has a thumb and four fingers but is not alive?', 'glove'],
+  ['What goes up but never comes down?', 'age'],
+  ['What is full of holes but still holds water?', 'sponge'],
+  ['What has a ring but no finger?', 'telephone'],
+  ['What has a face and two hands but no arms or legs?', 'clock'],
+  ['What is always in front of you but cannot be seen?', 'future'],
+  ['What has branches but no fruit, trunk, or leaves?', 'bank'],
+  ['What can you catch but not throw?', 'cold'],
+  ['What is black when clean and white when dirty?', 'blackboard'],
+  ['What has many teeth but cannot bite?', 'comb'],
+  ['What runs but never walks and has a bed but never sleeps?', 'river'],
+  ['What belongs to you but other people use it more than you do?', 'name'],
+  ['What gets bigger the more you take away from it?', 'hole'],
+  ['What has an eye but cannot see and is used for sewing?', 'needle'],
+].map(([prompt, answer]) => ({ prompt, answer }));
 const RIDDLE_QUESTIONS = [
   { prompt: 'I have hands but cannot clap. What am I?', answer: 'clock' },
   { prompt: 'I get wetter the more I dry. What am I?', answer: 'towel' },
@@ -301,12 +377,22 @@ function makeQuestion(type, seed, index) {
 }
 
 function makeQuestionSets(challenge) {
+  if (challenge.type === 'CODING') {
+    const start = challenge.number < 6 ? 0 : 5;
+    return CODING_QUESTIONS.slice(start, start + 5).map((question) => [question]);
+  }
   if (challenge.type === 'RIDDLE') {
     const start = challenge.number < 9 ? 0 : 3;
     return [RIDDLE_QUESTIONS.slice(start, start + 3)];
   }
   if (challenge.type === 'MYSTERY') {
     return [MYSTERY_POOL.slice(0, 20), MYSTERY_POOL.slice(20)];
+  }
+  if (challenge.type === 'LOGIC' || challenge.type === 'PUZZLE') {
+    const bank = challenge.type === 'LOGIC' ? LOGIC_QUESTIONS : PUZZLE_QUESTIONS;
+    return Array.from({ length: QUESTION_SET_COUNT }, (_, setIndex) => (
+      Array.from({ length: 3 }, (_, questionIndex) => bank[(setIndex * 3 + questionIndex) % bank.length])
+    ));
   }
   const setCount = challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT;
   return Array.from({ length: setCount }, (_, setIndex) => (
@@ -409,6 +495,12 @@ function publicChallenge(challenge) {
   if (!challenge) return null;
   const { answer, questionSets, volunteerCode, ...safeChallenge } = challenge;
   return safeChallenge;
+}
+
+function publicQuestion(question) {
+  if (!question) return null;
+  const { answer, ...safeQuestion } = question;
+  return safeQuestion;
 }
 
 function getTeamChallenge(team) {
@@ -609,7 +701,9 @@ app.get('/api/admin/teams', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
-  const rounds = challengeSeed.map((challenge) => ({
+  const rounds = challengeSeed.map((challenge) => {
+    const stored = challenges.get(challenge.id);
+    return {
     _id: challenge.id,
     questionNumber: challenge.number,
     code: challenge.stationCode,
@@ -622,7 +716,12 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     totalQuestions: challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT * 3),
     eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : QUESTION_SET_COUNT * 3,
     eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'shared pool; randomized per team' : 'per round',
-  }));
+    sets: stored.questionSets.map((set, setIndex) => ({
+      setNumber: setIndex + 1,
+      questions: set.map(publicQuestion),
+    })),
+  };
+  });
   res.json({
     rounds,
     plan: {
