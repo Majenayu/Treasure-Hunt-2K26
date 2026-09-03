@@ -503,6 +503,61 @@ function publicQuestion(question) {
   return safeQuestion;
 }
 
+function questionOptions(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((option) => String(option).trim()).filter(Boolean))];
+}
+
+function adminQuestionFrom(body = {}) {
+  const prompt = String(body.prompt || '').trim();
+  const answer = String(body.answer || '').trim();
+  const options = questionOptions(body.options);
+  if (!prompt) throw new Error('A question prompt is required.');
+  if (!answer) throw new Error('An answer is required.');
+  if (options.length && !options.some((option) => option.toLowerCase() === answer.toLowerCase())) {
+    throw new Error('The answer must match one of the provided options.');
+  }
+  return options.length ? { prompt, options, answer } : { prompt, answer };
+}
+
+function nextChallengeNumber() {
+  return challengeSeed.reduce((highest, challenge) => Math.max(highest, challenge.number), 0) + 1;
+}
+
+function addChallengeToTeamRoutes(id) {
+  baseRoute.push(id);
+  for (const team of teams.values()) team.route.push(id);
+}
+
+function createAdminChallenge(body = {}) {
+  const number = nextChallengeNumber();
+  const type = String(body.type || 'ACTIVITY').trim().toUpperCase();
+  const allowedTypes = ['CODING', 'LOGIC', 'PUZZLE', 'RIDDLE', 'MYSTERY', 'ACTIVITY'];
+  if (!allowedTypes.includes(type)) throw new Error('Choose a valid checkpoint type.');
+  const question = adminQuestionFrom(body);
+  const challenge = {
+    id: `custom-${number}`,
+    number,
+    name: String(body.name || 'New mission').trim(),
+    type,
+    icon: '✦',
+    station: String(body.station || 'NEW STATION').trim(),
+    stationCode: String(body.stationCode || `NEW-${String(number).padStart(2, '0')}`).trim().toUpperCase(),
+    location: String(body.location || 'To be announced').trim(),
+    color: 'amber',
+    timeLimit: Math.max(0, Number(body.timeLimit) || 0),
+    points: Math.max(0, Number(body.points) || 100),
+    prompt: question.prompt,
+    answer: question.answer,
+    hint: String(body.hint || 'Ask the mission controller.').trim(),
+  };
+  const questionSets = makeQuestionSets(challenge).map((set) => set.map((item, index) => index === 0 ? question : item));
+  challengeSeed.push(challenge);
+  challenges.set(challenge.id, { ...challenge, questionSets, disabled: false });
+  addChallengeToTeamRoutes(challenge.id);
+  return challenge;
+}
+
 function getTeamChallenge(team) {
   if (!team || team.currentIndex >= team.route.length) return null;
   return challenges.get(team.route[team.currentIndex]);
@@ -574,6 +629,7 @@ function publicTeam(team) {
     currentChallenge: safeChallenge,
     missionStartedAt: team.startedAt,
     missionSeconds: secondsOnMission(team),
+    totalMissions: team.route.length,
   };
 }
 
@@ -735,20 +791,41 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
-  const { answer = '', name = 'New mission', type = 'mystery' } = req.body || {};
-  const nextNumber = challengeSeed.length + 1;
-  const id = `custom-${nextNumber}`;
-  const challenge = {
-    id, number: nextNumber, name, type: String(type).toUpperCase(), icon: '✦',
-    station: 'NEW STATION', stationCode: `NEW-${String(nextNumber).padStart(2, '0')}`,
-    location: 'To be announced', color: 'amber', timeLimit: 0, points: 100,
-    prompt: 'A new mission is ready for your event.', answer: String(answer).toLowerCase(), hint: 'Ask the mission controller.',
-  };
-  challengeSeed.push(challenge);
-  baseRoute.push(id);
-  challenges.set(id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false });
-  writeAudit('MISSION ADDED', `${challenge.name} added to the route`);
-  res.status(201).json(challenge);
+  try {
+    const challenge = createAdminChallenge(req.body);
+    writeAudit('MISSION ADDED', `${challenge.name} added to the route`);
+    res.status(201).json(publicChallenge(challenge));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/questions/:id', requireAuth, requireAdmin, (req, res) => {
+  const stored = challenges.get(req.params.id);
+  if (!stored) return res.status(404).json({ error: 'Mission not found.' });
+  const setIndex = Number(req.body.setIndex);
+  const questionIndex = Number(req.body.questionIndex);
+  const current = stored.questionSets[setIndex]?.[questionIndex];
+  if (!current) return res.status(404).json({ error: 'Question item not found.' });
+  const prompt = String(req.body.prompt || '').trim();
+  const options = questionOptions(req.body.options);
+  if (!prompt) return res.status(400).json({ error: 'A question prompt is required.' });
+  const answer = String(req.body.answer || '').trim() || current.answer;
+  if (options.length && !options.some((option) => option.toLowerCase() === answer.toLowerCase())) {
+    return res.status(400).json({ error: 'The answer must match one of the provided options.' });
+  }
+  stored.questionSets[setIndex][questionIndex] = options.length ? { prompt, options, answer } : { prompt, answer };
+  if (setIndex === 0 && questionIndex === 0) {
+    stored.prompt = prompt;
+    stored.answer = answer;
+    const seed = challengeSeed.find((challenge) => challenge.id === stored.id);
+    if (seed) {
+      seed.prompt = prompt;
+      seed.answer = answer;
+    }
+  }
+  writeAudit('QUESTION UPDATED', `${stored.name} · set ${setIndex + 1}, question ${questionIndex + 1}`);
+  res.json({ ok: true, question: publicQuestion(stored.questionSets[setIndex][questionIndex]) });
 });
 
 app.delete('/api/admin/questions/:id', requireAuth, requireAdmin, (req, res) => {
@@ -764,6 +841,8 @@ app.delete('/api/admin/questions/:id', requireAuth, requireAdmin, (req, res) => 
 
 app.get('/api/admin/checkpoints', requireAuth, requireAdmin, (req, res) => {
   res.json(challengeSeed.map((challenge) => ({
+    id: challenge.id,
+    number: challenge.number,
     label: challenge.station,
     name: challenge.name,
     locationHint: challenge.location,
@@ -775,9 +854,40 @@ app.get('/api/admin/checkpoints', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/checkpoints', requireAuth, requireAdmin, (req, res) => {
-  const { name = 'New checkpoint', locationHint = 'To be announced' } = req.body || {};
-  writeAudit('LOCATION NOTE ADDED', `${name} · ${locationHint}`);
-  res.status(201).json({ ok: true, message: 'Location note saved.' });
+  try {
+    const challenge = createAdminChallenge({
+      ...req.body,
+      name: req.body?.name || 'New checkpoint',
+      location: req.body?.locationHint || 'To be announced',
+      station: req.body?.station || 'NEW STATION',
+      stationCode: req.body?.stationCode,
+      type: req.body?.type || 'ACTIVITY',
+      prompt: req.body?.prompt || 'Reach this checkpoint and complete the mission.',
+      answer: req.body?.answer || 'complete',
+      hint: req.body?.hint || 'Ask the mission controller.',
+    });
+    writeAudit('LOCATION ADDED', `${challenge.name} · ${challenge.location}`);
+    res.status(201).json({ ok: true, checkpoint: challenge });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/checkpoints/:number', requireAuth, requireAdmin, (req, res) => {
+  const challenge = challengeSeed.find((item) => item.number === Number(req.params.number));
+  if (!challenge) return res.status(404).json({ error: 'Checkpoint not found.' });
+  const stored = challenges.get(challenge.id);
+  const name = String(req.body.name || '').trim();
+  const station = String(req.body.station || '').trim();
+  const stationCode = String(req.body.stationCode || '').trim().toUpperCase();
+  const locationHint = String(req.body.locationHint || '').trim();
+  if (!name || !station || !stationCode || !locationHint) {
+    return res.status(400).json({ error: 'Name, station, code, and location are required.' });
+  }
+  Object.assign(challenge, { name, station, stationCode, location: locationHint });
+  Object.assign(stored, { name, station, stationCode, location: locationHint });
+  writeAudit('LOCATION UPDATED', `${challenge.name} · ${challenge.location}`);
+  res.json({ ok: true, checkpoint: { id: challenge.id, number: challenge.number, label: challenge.station, name: challenge.name, locationHint: challenge.location, stationCode: challenge.stationCode, type: challenge.type.toLowerCase() } });
 });
 
 app.get('/api/admin/progress', requireAuth, requireAdmin, (req, res) => {
