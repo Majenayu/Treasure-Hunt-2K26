@@ -146,6 +146,13 @@
     .mission h3 { font: 700 32px 'Space Grotesk'; letter-spacing: -.06em; margin: 12px 0 8px; }
     .mission-location { color: var(--muted); font-size: 13px; margin-bottom: 25px; }
     .mission-prompt { font-size: 18px; line-height: 1.5; max-width: 650px; margin: 22px 0; }
+    .question-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 14px 0; background: rgba(255,255,255,.35); }
+    .question-number { color: var(--orange-dark); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
+    .quiz-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .quiz-option { display: flex; gap: 9px; align-items: center; border: 1px solid var(--line); border-radius: 9px; padding: 11px; color: var(--muted); font-size: 13px; cursor: pointer; }
+    .quiz-option:has(input:checked) { color: var(--ink); border-color: var(--orange); background: var(--orange-soft); }
+    .unlock-code { width: 120px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 9px; color: var(--ink); background: var(--card); outline: 0; font: 11px 'DM Mono'; text-transform: uppercase; }
+    .unlock-code:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(242,106,61,.13); }
     .mission-meta { display: flex; gap: 8px; flex-wrap: wrap; }
     .timer { color: var(--orange-dark); font: 500 12px 'DM Mono'; background: var(--orange-soft); padding: 7px 9px; border-radius: 7px; }
     .team-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); gap: 22px; }
@@ -168,6 +175,8 @@
     @media (max-width: 620px) {
       .login-art { display: none; }
       .login-panel { padding: 25px 18px; }
+      .quiz-options { grid-template-columns: 1fr; }
+      .challenge-row { flex-wrap: wrap; }
       .sidebar { position: fixed; width: 100%; height: 64px; bottom: 0; z-index: 10; padding: 0 10px; flex-direction: row; align-items: center; }
       .sidebar .brand, .side-label, .sidebar-bottom { display: none; }
       .nav { width: 100%; display: flex; justify-content: space-around; }
@@ -423,8 +432,18 @@
       if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
       const challenge = team.currentChallenge;
       const complete = team.completed >= 10;
-      const questionCards = (challenge.questions || []).map((question, index) => `<div class="question-card"><div class="question-number">Question ${index + 1}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p><div class="field"><label for="answer-${index}">Your answer</label><input id="answer-${index}" class="mission-answer" data-answer-index="${index}" placeholder="Type your answer" autocomplete="off"></div></div>`).join('');
-      const missionContent = complete ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ten stations. Stay sharp — the final standings are still moving.</p><button class="primary" data-view="teamboard">View leaderboard ↗</button>` : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / 10 · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3><div class="mission-location">⌖ ${escapeHtml(challenge.location)} · <span class="mono">${escapeHtml(challenge.stationCode)}</span></div><div class="mission-meta"><span class="timer">${challenge.timeLimit ? '05:00 timed' : 'Open time'}</span><span class="tag">${escapeHtml(challenge.station)}</span>${challenge.questionSet ? `<span class="tag">SET ${challenge.questionSet} / 10</span>` : ''}</div>${team.currentChallenge ? `${questionCards}<button id="submitAnswer" class="primary">Submit set ↗</button><p class="card-subtitle" style="margin-top:14px">All questions must be answered. Hint: ${escapeHtml(challenge.hint)}</p>` : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><button id="startMission" class="primary">Scan station to start ↗</button><p class="card-subtitle" style="margin-top:14px">Your sealed question set will be assigned when the station is unlocked.</p>`}`;
+      const waitingForVolunteer = ['PUZZLE', 'LOGIC'].includes(challenge.type);
+      const questionCards = (challenge.questions || []).map((question, index) => {
+        const answerControl = question.options
+          ? `<div class="quiz-options">${question.options.map((option) => `<label class="quiz-option"><input type="radio" name="quiz-${index}" class="mission-quiz-answer" data-answer-index="${index}" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join('')}</div>`
+          : `<div class="field"><label for="answer-${index}">Your answer</label><input id="answer-${index}" class="mission-answer" data-answer-index="${index}" placeholder="Type your answer" autocomplete="off"></div>`;
+        return `<div class="question-card"><div class="question-number">Question ${index + 1}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
+      }).join('');
+      const roundLabel = challenge.quizRound ? `QUIZ ROUND ${challenge.quizRound} · 20 QUESTIONS` : challenge.questionSet ? `SET ${challenge.questionSet} / ${challenge.type === 'RIDDLE' ? '1' : challenge.type === 'CODING' ? '5' : '10'}` : '';
+      const waitingContent = waitingForVolunteer
+        ? `<div class="mission-kicker">Checkpoint verification required</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">Reach ${escapeHtml(challenge.location)} and give your team code to the checkpoint volunteer. Your three ${escapeHtml(challenge.type.toLowerCase())} clues will appear after they enter the secret code.</p>`
+        : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><button id="startMission" class="primary">Unlock station ↗</button><p class="card-subtitle" style="margin-top:14px">Enter the station code provided at the checkpoint.</p>`;
+      const missionContent = complete ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ten stations. Stay sharp — the final standings are still moving.</p><button class="primary" data-view="teamboard">View leaderboard ↗</button>` : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / 10 · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3><div class="mission-location">⌖ ${escapeHtml(challenge.location)} · <span class="mono">${escapeHtml(challenge.stationCode)}</span></div><div class="mission-meta"><span class="timer">${challenge.timeLimit ? '05:00 timed' : 'Open time'}</span><span class="tag">${escapeHtml(challenge.station)}</span>${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.currentChallenge ? `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : 'Submit set ↗'}</button><p class="card-subtitle" style="margin-top:14px">All answers are scored by the mission controller. Hint: ${escapeHtml(challenge.hint)}</p>` : waitingContent}`;
       $('#view').innerHTML = `<div class="team-layout"><section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div><div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div></section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / 10 cleared</span></div><div class="progress-track"><i style="width:${team.completed * 10}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div><div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div><div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/10</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
       if ($('#startMission')) $('#startMission').addEventListener('click', startMission);
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
@@ -435,8 +454,11 @@
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
       const data = await api('/api/organizer/checkpoint-teams');
       $('#eventStatus').innerHTML = `<span class="dot"></span> CHECKPOINT ${escapeHtml(data.checkpointLabel)}`;
-      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">${escapeHtml(data.checkpointLabel)} checkpoint console</h2><p class="card-subtitle">Verify teams as they arrive at your station.</p></div><span class="tag">ORGANIZER</span></div>${data.teams.length ? `<div class="challenge-list">${data.teams.map((team) => `<div class="challenge-row"><span class="challenge-index">${escapeHtml(team.id.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.name)}</strong><span>${team.completed}/10 cleared · ${team.score} points</span></div><span class="status ${team.active ? '' : 'ready'}">${team.active ? 'ON MISSION' : 'READY'}</span><button class="outline verify-team" data-team="${team.id}">Verify</button></div>`).join('')}</div>` : '<p class="card-subtitle">No teams are currently assigned to this checkpoint.</p>'}</section>`;
-      document.querySelectorAll('.verify-team').forEach((button) => button.addEventListener('click', async () => { await api('/api/organizer/mark-status', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, status: 'completed' }) }); showToast('Checkpoint verification logged.'); render(); }));
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">${escapeHtml(data.checkpointLabel)} checkpoint console</h2><p class="card-subtitle">Enter the secret checkpoint code to release the next clue.</p></div><span class="tag">VOLUNTEER</span></div>${data.teams.length ? `<div class="challenge-list">${data.teams.map((team) => `<div class="challenge-row"><span class="challenge-index">${escapeHtml(team.id.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.name)}</strong><span>${team.completed}/10 cleared · ${team.score} points · ${team.currentChallenge?.name || 'waiting'}</span></div><span class="status ${team.active ? '' : 'ready'}">${team.active ? 'CONNECTED' : 'READY'}</span>${team.currentChallenge?.type && ['PUZZLE','LOGIC'].includes(team.currentChallenge.type) ? `<input class="unlock-code" data-team="${team.id}" placeholder="Secret code" autocomplete="off"><button class="outline unlock-team" data-team="${team.id}">Release clue</button>` : '<span class="tag">No unlock needed</span>'}</div>`).join('')}</div>` : '<p class="card-subtitle">No teams are currently assigned to this checkpoint.</p>'}</section>`;
+      document.querySelectorAll('.unlock-team').forEach((button) => button.addEventListener('click', async () => {
+        const input = document.querySelector(`.unlock-code[data-team="${button.dataset.team}"]`);
+        try { await api('/api/organizer/unlock', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, secretCode: input.value }) }); showToast('Clue released to the team.'); render(); } catch (error) { showToast(error.message); }
+      }));
     }
     async function startMission() {
       const code = prompt('Enter the station code from the location:', '');
@@ -446,8 +468,13 @@
     async function submitAnswer() {
       try {
         const answers = [...document.querySelectorAll('.mission-answer')].map((input) => input.value);
-        const data = await api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers }) });
-        if (data.correct) { showToast('Mission cleared. Next station unlocked.'); render(); } else { showToast(data.timedOut ? 'Time expired. Try again for practice.' : 'Not quite. Check the clue and try again.'); render(); }
+        const quizAnswers = [...document.querySelectorAll('.mission-quiz-answer')].reduce((all, input) => {
+          if (input.checked) all[Number(input.dataset.answerIndex)] = input.value;
+          return all;
+        }, []);
+        const submittedAnswers = quizAnswers.length ? quizAnswers : answers;
+        const data = await api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers: submittedAnswers }) });
+        if (data.correct) { showToast(data.totalQuestions > 1 ? `Quiz scored ${data.correctAnswers}/${data.totalQuestions}.` : 'Mission cleared. Next station unlocked.'); render(); } else { showToast(data.timedOut ? 'Time expired. Try again for practice.' : 'Answer every question correctly before continuing.'); render(); }
       } catch (error) { showToast(error.message); }
     }
     (async () => {

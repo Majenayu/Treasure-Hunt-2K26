@@ -36,6 +36,7 @@ const challengeSeed = [
     icon: '◈',
     station: 'NORTH HALL',
     stationCode: 'NORTH-07',
+    volunteerCode: 'NORTH-LOCK',
     location: 'North Hall · Level 1',
     color: 'amber',
     timeLimit: 0,
@@ -52,6 +53,7 @@ const challengeSeed = [
     icon: '✦',
     station: 'COURTYARD',
     stationCode: 'GARDEN-03',
+    volunteerCode: 'GARDEN-LOCK',
     location: 'Central Courtyard',
     color: 'mint',
     timeLimit: 0,
@@ -116,6 +118,7 @@ const challengeSeed = [
     icon: '◈',
     station: 'EAST WING',
     stationCode: 'GRID-22',
+    volunteerCode: 'GRID-LOCK',
     location: 'East Wing · Studio 4',
     color: 'amber',
     timeLimit: 0,
@@ -132,6 +135,7 @@ const challengeSeed = [
     icon: '✦',
     station: 'WEST STAIRS',
     stationCode: 'WEST-18',
+    volunteerCode: 'WEST-LOCK',
     location: 'West Stairs · Landing',
     color: 'mint',
     timeLimit: 0,
@@ -175,6 +179,56 @@ const challengeSeed = [
 ];
 
 const QUESTION_SET_COUNT = 10;
+const RIDDLE_QUESTIONS = [
+  { prompt: 'I have hands but cannot clap. What am I?', answer: 'clock' },
+  { prompt: 'I get wetter the more I dry. What am I?', answer: 'towel' },
+  { prompt: 'I have one eye but cannot see. What am I?', answer: 'needle' },
+  { prompt: 'I have a neck but no head. What am I?', answer: 'bottle' },
+  { prompt: 'I can be cracked, made, told, and played. What am I?', answer: 'joke' },
+  { prompt: 'I have cities but no houses and rivers but no water. What am I?', answer: 'map' },
+];
+const MYSTERY_POOL = [
+  ['What is the capital of India?', ['Mumbai', 'New Delhi', 'Kolkata', 'Chennai'], 'New Delhi'],
+  ['Which planet is known as the Red Planet?', ['Venus', 'Mars', 'Jupiter', 'Saturn'], 'Mars'],
+  ['What is the chemical symbol for gold?', ['Ag', 'Fe', 'Au', 'Go'], 'Au'],
+  ['How many sides does a hexagon have?', ['Five', 'Six', 'Seven', 'Eight'], 'Six'],
+  ['Who wrote Romeo and Juliet?', ['Dickens', 'Shakespeare', 'Austen', 'Frost'], 'Shakespeare'],
+  ['What is the largest ocean on Earth?', ['Atlantic', 'Indian', 'Arctic', 'Pacific'], 'Pacific'],
+  ['Which language runs in a web browser?', ['Python', 'JavaScript', 'C++', 'SQL'], 'JavaScript'],
+  ['What is 12 × 8?', ['86', '96', '108', '112'], '96'],
+  ['Which gas do plants absorb?', ['Oxygen', 'Nitrogen', 'Carbon dioxide', 'Hydrogen'], 'Carbon dioxide'],
+  ['What is the first element on the periodic table?', ['Helium', 'Hydrogen', 'Oxygen', 'Carbon'], 'Hydrogen'],
+  ['Which instrument has black and white keys?', ['Guitar', 'Piano', 'Flute', 'Drum'], 'Piano'],
+  ['How many continents are there?', ['Five', 'Six', 'Seven', 'Eight'], 'Seven'],
+  ['What is the square root of 144?', ['10', '11', '12', '14'], '12'],
+  ['Which animal is called the ship of the desert?', ['Horse', 'Camel', 'Elephant', 'Yak'], 'Camel'],
+  ['What is the hardest natural substance?', ['Iron', 'Diamond', 'Quartz', 'Granite'], 'Diamond'],
+  ['Which organ pumps blood?', ['Lung', 'Brain', 'Heart', 'Liver'], 'Heart'],
+  ['What is the freezing point of water in Celsius?', ['0', '10', '32', '100'], '0'],
+  ['Which is the nearest star to Earth?', ['Sirius', 'The Sun', 'Polaris', 'Vega'], 'The Sun'],
+  ['What is the binary representation of decimal 2?', ['00', '01', '10', '11'], '10'],
+  ['Which shape has three sides?', ['Circle', 'Square', 'Triangle', 'Rectangle'], 'Triangle'],
+  ['What is the largest mammal?', ['Elephant', 'Blue whale', 'Giraffe', 'Hippopotamus'], 'Blue whale'],
+  ['Which country is famous for the pyramids of Giza?', ['Greece', 'Egypt', 'Mexico', 'Peru'], 'Egypt'],
+  ['How many minutes are in one hour?', ['30', '45', '60', '90'], '60'],
+  ['What does CPU stand for?', ['Central Processing Unit', 'Computer Power Utility', 'Core Program User', 'Central Print Unit'], 'Central Processing Unit'],
+  ['Which number is prime?', ['21', '27', '29', '33'], '29'],
+  ['What is the boiling point of water at sea level in Celsius?', ['50', '90', '100', '120'], '100'],
+  ['Which direction does the sun rise from?', ['North', 'South', 'East', 'West'], 'East'],
+  ['What is the main language used to style web pages?', ['HTML', 'CSS', 'JSON', 'XML'], 'CSS'],
+  ['Which metal is liquid at room temperature?', ['Copper', 'Mercury', 'Aluminium', 'Zinc'], 'Mercury'],
+  ['How many bytes are in a kilobyte in common computing usage?', ['100', '512', '1024', '2048'], '1024'],
+  ['Which is a renewable energy source?', ['Coal', 'Solar power', 'Petrol', 'Natural gas'], 'Solar power'],
+  ['What is the opposite of binary 1 in a bit?', ['0', '2', '10', 'False and true'], '0'],
+  ['Which country gifted the Statue of Liberty to the United States?', ['France', 'Spain', 'Italy', 'Canada'], 'France'],
+  ['What is the process by which plants make food?', ['Respiration', 'Photosynthesis', 'Digestion', 'Fermentation'], 'Photosynthesis'],
+  ['Which device is used to measure temperature?', ['Barometer', 'Thermometer', 'Altimeter', 'Compass'], 'Thermometer'],
+  ['How many players are on a football team on the field?', ['9', '10', '11', '12'], '11'],
+  ['Which file extension is commonly used for JavaScript?', ['.css', '.js', '.py', '.java'], '.js'],
+  ['What is 15% of 200?', ['15', '20', '30', '40'], '30'],
+  ['Which planet is famous for its rings?', ['Mercury', 'Earth', 'Saturn', 'Neptune'], 'Saturn'],
+  ['What does QR stand for in QR code?', ['Quick Response', 'Query Register', 'Quality Read', 'Quick Route'], 'Quick Response'],
+].map(([prompt, options, answer], index) => ({ id: `mystery-${index + 1}`, prompt, options, answer }));
 
 function makeQuestion(type, seed, index) {
   const n = seed * 10 + index + 1;
@@ -247,7 +301,15 @@ function makeQuestion(type, seed, index) {
 }
 
 function makeQuestionSets(challenge) {
-  return Array.from({ length: QUESTION_SET_COUNT }, (_, setIndex) => (
+  if (challenge.type === 'RIDDLE') {
+    const start = challenge.number < 9 ? 0 : 3;
+    return [RIDDLE_QUESTIONS.slice(start, start + 3)];
+  }
+  if (challenge.type === 'MYSTERY') {
+    return [MYSTERY_POOL.slice(0, 20), MYSTERY_POOL.slice(20)];
+  }
+  const setCount = challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT;
+  return Array.from({ length: setCount }, (_, setIndex) => (
     Array.from({ length: challenge.type === 'CODING' ? 1 : 3 }, (_, questionIndex) => (
       makeQuestion(challenge.type, challenge.number * 100 + setIndex * 3, questionIndex)
     ))
@@ -345,7 +407,7 @@ function requireAdmin(req, res, next) {
 
 function publicChallenge(challenge) {
   if (!challenge) return null;
-  const { answer, questionSets, ...safeChallenge } = challenge;
+  const { answer, questionSets, volunteerCode, ...safeChallenge } = challenge;
   return safeChallenge;
 }
 
@@ -356,16 +418,31 @@ function getTeamChallenge(team) {
 
 function assignedQuestions(team, challenge) {
   if (!challenge) return [];
+  if (challenge.type === 'MYSTERY') {
+    if (!team.mysteryOrder) {
+      team.mysteryOrder = MYSTERY_POOL.map((_, index) => ({
+        index,
+        key: crypto.createHash('sha256').update(`${team.id}:mystery:${index}`).digest('hex'),
+      })).sort((a, b) => a.key.localeCompare(b.key)).map((item) => item.index);
+    }
+    const start = challenge.number < 9 ? 0 : 20;
+    return team.mysteryOrder.slice(start, start + 20).map((index) => MYSTERY_POOL[index]);
+  }
   const assignment = team.questionAssignments[challenge.id] ?? 0;
   return challenge.questionSets[assignment] || challenge.questionSets[0] || [];
 }
 
 function assignQuestionSet(team, challenge) {
   if (team.questionAssignments[challenge.id] !== undefined) return team.questionAssignments[challenge.id];
-  const usage = Array.from({ length: QUESTION_SET_COUNT }, () => 0);
+  if (challenge.type === 'MYSTERY') {
+    assignedQuestions(team, challenge);
+    team.questionAssignments[challenge.id] = 0;
+    return 0;
+  }
+  const usage = Array.from({ length: challenge.questionSets.length }, () => 0);
   for (const otherTeam of teams.values()) {
     const assigned = otherTeam.questionAssignments?.[challenge.id];
-    if (assigned !== undefined) usage[assigned] += 1;
+    if (assigned !== undefined && assigned < usage.length) usage[assigned] += 1;
   }
   const lowestUsage = Math.min(...usage);
   const available = usage.map((count, index) => count === lowestUsage ? index : -1).filter((index) => index >= 0);
@@ -384,7 +461,12 @@ function publicTeam(team) {
   const safeChallenge = publicChallenge(challenge);
   if (safeChallenge && team.currentChallenge === challenge.id) {
     const assignment = team.questionAssignments[challenge.id] ?? 0;
-    safeChallenge.questionSet = assignment + 1;
+    if (challenge.type === 'MYSTERY') {
+      safeChallenge.quizRound = challenge.number < 9 ? 1 : 2;
+      safeChallenge.quizTotal = 20;
+    } else {
+      safeChallenge.questionSet = assignment + 1;
+    }
     safeChallenge.questions = assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
   }
   return {
@@ -464,6 +546,10 @@ app.post('/api/login', loginLimiter, (req, res) => {
     tracing2: { checkpointType: 'tracing', checkpointLabel: 'T2' },
     coding1: { checkpointType: 'coding', checkpointLabel: 'C1' },
     coding2: { checkpointType: 'coding', checkpointLabel: 'C2' },
+    logic1: { checkpointType: 'logic', checkpointLabel: 'NORTH HALL' },
+    logic2: { checkpointType: 'logic', checkpointLabel: 'EAST WING' },
+    puzzle1: { checkpointType: 'puzzle', checkpointLabel: 'COURTYARD' },
+    puzzle2: { checkpointType: 'puzzle', checkpointLabel: 'WEST STAIRS' },
     activity1: { checkpointType: 'activity', checkpointLabel: 'T4' },
     activity2: { checkpointType: 'activity', checkpointLabel: 'T5' },
     activity3: { checkpointType: 'activity', checkpointLabel: 'T6' },
@@ -531,9 +617,11 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     difficulty: challenge.type === 'CODING' ? 'hard' : 'medium',
     name: challenge.name,
     disabled: challenges.get(challenge.id).disabled,
-    setCount: QUESTION_SET_COUNT,
-    questionsPerSet: challenge.type === 'CODING' ? 1 : 3,
-    totalQuestions: QUESTION_SET_COUNT * (challenge.type === 'CODING' ? 1 : 3),
+    setCount: challenge.type === 'CODING' ? 5 : challenge.type === 'RIDDLE' ? 1 : challenge.type === 'MYSTERY' ? 'random per team' : QUESTION_SET_COUNT,
+    questionsPerSet: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : challenge.type === 'CODING' ? 1 : 3,
+    totalQuestions: challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT * 3),
+    eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : QUESTION_SET_COUNT * 3,
+    eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'shared pool; randomized per team' : 'per round',
   })));
 });
 
@@ -610,6 +698,7 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.active = false; team.completedAt = null; team.currentChallenge = null;
     team.startedAt = null; team.completedChallenges = [];
     team.questionAssignments = {};
+    team.mysteryOrder = null;
   }
   state.status = 'PAUSED';
   writeAudit('EVENT RESET', 'All team progress was cleared');
@@ -644,6 +733,7 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.startedAt = null;
   team.completedChallenges = [];
   team.questionAssignments = {};
+  team.mysteryOrder = null;
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
 });
@@ -661,6 +751,9 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   const challenge = getTeamChallenge(team);
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
   if (challenge.disabled) return res.status(409).json({ error: 'This station is temporarily offline.' });
+  if (['PUZZLE', 'LOGIC'].includes(challenge.type)) {
+    return res.status(409).json({ error: 'A checkpoint volunteer must unlock this clue.' });
+  }
   if ((req.body.stationCode || '').trim().toUpperCase() !== challenge.stationCode) {
     return res.status(400).json({ error: `Wrong station. Scan the code at ${challenge.location}.` });
   }
@@ -676,6 +769,28 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   res.json({ ok: true, team: publicTeam(team) });
 });
 
+app.post('/api/organizer/unlock', requireAuth, (req, res) => {
+  if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
+  if (!team) return res.status(404).json({ error: 'Team not found.' });
+  const challenge = getTeamChallenge(team);
+  if (!challenge || !['PUZZLE', 'LOGIC'].includes(challenge.type)) {
+    return res.status(409).json({ error: 'This team is not waiting at a Puzzle or Logic checkpoint.' });
+  }
+  if (req.user.checkpointType && req.user.checkpointType !== challenge.type.toLowerCase()) {
+    return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
+  }
+  if (String(req.body.secretCode || '').trim().toUpperCase() !== challenge.volunteerCode) {
+    return res.status(400).json({ error: 'That volunteer code is not valid for this checkpoint.' });
+  }
+  if (team.currentChallenge && team.startedAt) return res.json({ ok: true, team: publicTeam(team) });
+  assignQuestionSet(team, challenge);
+  team.currentChallenge = challenge.id;
+  team.startedAt = new Date().toISOString();
+  writeAudit('CLUE UNLOCKED', `${team.id} received the ${challenge.type.toLowerCase()} clue`, req.user.username);
+  res.json({ ok: true, team: publicTeam(team) });
+});
+
 app.post('/api/team/submit', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
   if (state.status !== 'LIVE') return res.status(409).json({ error: 'The circuit is currently paused.' });
@@ -688,15 +803,24 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   const timedOut = challenge.timeLimit > 0 && elapsed > challenge.timeLimit;
   const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [req.body.answer];
   const expectedQuestions = assignedQuestions(team, challenge);
-  const correct = !timedOut
+  const correctAnswers = expectedQuestions.reduce((count, question, index) => (
+    count + (String(submittedAnswers[index] || '').trim().toLowerCase() === question.answer.toLowerCase() ? 1 : 0)
+  ), 0);
+  const isMysteryQuiz = challenge.type === 'MYSTERY';
+  const quizComplete = isMysteryQuiz
     && submittedAnswers.length === expectedQuestions.length
-    && expectedQuestions.every((question, index) => String(submittedAnswers[index] || '').trim().toLowerCase() === question.answer.toLowerCase());
+    && expectedQuestions.every((_, index) => String(submittedAnswers[index] || '').trim().length > 0);
+  const correct = !timedOut
+    && (isMysteryQuiz ? quizComplete : submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length);
   team.attempts += 1;
   if (!correct) {
     writeAudit('ANSWER MISSED', `${team.id} attempted ${challenge.name}`, team.id);
     return res.json({ ok: true, correct: false, timedOut, attempts: team.attempts, team: publicTeam(team) });
   }
-  team.score += Math.max(20, challenge.points - (team.attempts - 1) * 20);
+  const earnedPoints = isMysteryQuiz
+    ? Math.round((correctAnswers / expectedQuestions.length) * challenge.points)
+    : Math.max(20, challenge.points - (team.attempts - 1) * 20);
+  team.score += earnedPoints;
   team.totalSeconds += elapsed;
   team.completedChallenges.push({ id: challenge.id, seconds: elapsed, at: new Date().toISOString() });
   team.currentIndex += 1;
@@ -708,7 +832,7 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
     team.active = false;
   }
   writeAudit('MISSION CLEARED', `${team.id} completed ${challenge.name}`, team.id);
-  res.json({ ok: true, correct: true, score: team.score, team: publicTeam(team) });
+  res.json({ ok: true, correct: true, correctAnswers, totalQuestions: expectedQuestions.length, earnedPoints, score: team.score, team: publicTeam(team) });
 });
 
 app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
