@@ -1,0 +1,435 @@
+Yes — now I understand what you’re building. You’re essentially making a **digital, app-controlled campus treasure hunt** for ~180–200 participants, with **40-ish teams of 5**, 10 challenges, controlled sequencing, and timing-based ranking.
+
+I’d structure it like this:
+
+## 🎯 Proposed Event Structure
+
+### Participants
+
+* **180–200 participants**
+* **5 members per team**
+* Approximately **36–40 teams**
+* Each team gets a unique **Team ID**
+* Every member can log in/enter the Team ID on the website.
+
+### 10 Challenges
+
+| #  | Challenge           | Type              | Timer      |
+| -- | ------------------- | ----------------- | ---------- |
+| 1  | Coding Challenge A  | 💻 Coding         | **5 min**  |
+| 2  | Logical Challenge A | 🧠 Logic          | No/limited |
+| 3  | Puzzle Challenge A  | 🧩 Puzzle         | No/limited |
+| 4  | Riddle Challenge A  | ❓ Riddle          | No/limited |
+| 5  | Mystery Challenge A | 🔮 Something Else | No/limited |
+| 6  | Coding Challenge B  | 💻 Coding         | **5 min**  |
+| 7  | Logical Challenge B | 🧠 Logic          | No/limited |
+| 8  | Puzzle Challenge B  | 🧩 Puzzle         | No/limited |
+| 9  | Riddle Challenge B  | ❓ Riddle          | No/limited |
+| 10 | Mystery Challenge B | 🔮 Something Else | No/limited |
+
+But **don't make every team follow 1→10**. That's where your idea becomes interesting.
+
+---
+
+# 🔀 The Important Part: Team Routing
+
+You said:
+
+> "the labs should not be together for any team"
+
+I would interpret this as **the two coding/lab stations must be separated**.
+
+So instead of:
+
+**Team A:** Coding 1 → Coding 2 → Logic → Puzzle...
+
+we create different routes.
+
+For example:
+
+### Team 01
+
+`Coding A → Puzzle A → Riddle A → Logic B → Mystery A → Coding B → ...`
+
+### Team 02
+
+`Logic A → Mystery B → Coding A → Riddle B → Puzzle A → Coding B → ...`
+
+### Team 03
+
+`Puzzle B → Coding B → Logic A → Mystery A → Coding A → ...`
+
+This prevents **40 teams from reaching the same station simultaneously**.
+
+---
+
+# ⏱️ Coding Lab – 5 Minute System
+
+This needs to be very controlled.
+
+When a team reaches the coding station:
+
+### Step 1
+
+They scan the station QR / enter station code.
+
+Website checks:
+
+> Is this team supposed to be at Coding A now?
+
+If **YES** → Start.
+
+If **NO** → ❌ "Wrong Station."
+
+### Step 2
+
+A **5:00 countdown** starts.
+
+Example:
+
+**CODING CHALLENGE A**
+
+`05:00`
+
+`04:59`
+
+`04:58`
+
+...
+
+### Step 3
+
+Team submits the answer/code.
+
+The system records:
+
+* Team ID
+* Challenge ID
+* Start time
+* Submission time
+* Completion time
+* Correct/incorrect
+* Attempts
+
+### Step 4
+
+At exactly **00:00**, the challenge automatically closes.
+
+No extra time.
+
+---
+
+# 🏆 Scoring
+
+I recommend **two separate things**:
+
+### 1. Challenge Score
+
+Each challenge gives points.
+
+For example:
+
+* Correct first attempt → **100 points**
+* Correct second attempt → **80 points**
+* Incorrect → **0 points**
+
+You can customize this.
+
+### 2. Time
+
+The website also records the **exact completion time**.
+
+So leaderboard ranking can be:
+
+> **Total Score → Total Completion Time → Number of Attempts**
+
+This is much fairer than simply saying "first team wins."
+
+---
+
+# 🥇 Example Leaderboard
+
+| Rank | Team    | Score |  Time |
+| ---: | ------- | ----: | ----: |
+| 🥇 1 | Team 17 |   920 | 42:18 |
+| 🥈 2 | Team 08 |   920 | 44:02 |
+| 🥉 3 | Team 31 |   900 | 39:51 |
+|    4 | Team 12 |   900 | 41:13 |
+
+If two teams have the same score, the **faster team wins**.
+
+---
+
+# 🌐 Website Flow
+
+The whole event can work through one website.
+
+### 1. Team Login
+
+```text
+CODEHUNT
+
+Team ID:
+[ TEAM-017 ]
+
+[ START ]
+```
+
+---
+
+### 2. Team Dashboard
+
+They see:
+
+```text
+TEAM 017
+
+Completed: 3 / 10
+
+Current Mission
+🧩 PUZZLE A
+
+Location:
+Block B – 2nd Floor
+
+[ START CHALLENGE ]
+```
+
+They **should NOT see all future challenges**.
+
+Only their current mission.
+
+---
+
+# 📍 Station Verification
+
+This is very important.
+
+Each physical station gets a unique QR code.
+
+For example:
+
+```text
+CODING-A
+QR-A001
+```
+
+Team reaches the location → scans QR.
+
+The server checks:
+
+```text
+Team 017
+        ↓
+Expected Station = CODING-A
+        ↓
+QR = CODING-A
+        ↓
+✅ ACCESS GRANTED
+```
+
+Wrong station:
+
+```text
+Expected: PUZZLE-A
+Scanned: CODING-A
+
+❌ WRONG LOCATION
+```
+
+This prevents teams from randomly jumping ahead.
+
+---
+
+# 🔐 Don't Reveal the Next Challenge
+
+After completing a challenge:
+
+```text
+✅ CHALLENGE COMPLETED
+
+Score: +100
+
+Time: 04:12
+
+Your next mission is ready.
+
+🔒 Unlock Next Mission
+```
+
+Then reveal the next location/clue.
+
+This makes it feel like an **actual treasure hunt**, rather than 10 questions on a website.
+
+---
+
+# 🚦 Preventing Crowd Problems
+
+With **36–40 teams**, this is the biggest issue.
+
+You don't want:
+
+> 15 teams standing outside Coding A.
+
+So we should create **route groups**.
+
+For example:
+
+### Group A
+
+Teams 01–08
+
+### Group B
+
+Teams 09–16
+
+### Group C
+
+Teams 17–24
+
+### Group D
+
+Teams 25–32
+
+### Group E
+
+Teams 33–40
+
+Each group gets different starting stations and different routes.
+
+And critically:
+
+**Coding A and Coding B are never consecutive in any team's route.**
+
+---
+
+# 💻 Coding Lab Capacity
+
+If Coding A has, say, **5 computers**, then only 5 teams can be inside simultaneously.
+
+The app can enforce:
+
+```text
+Coding A
+
+Capacity: 5 teams
+
+Currently:
+Team 04
+Team 12
+Team 19
+Team 27
+Team 35
+
+FULL
+```
+
+Other teams shouldn't be sent there until capacity is available.
+
+This is something I'd build into the routing algorithm rather than managing manually.
+
+---
+
+# 👨‍💼 Organizer Dashboard
+
+You should have a completely separate **Admin Panel**.
+
+You can see:
+
+```text
+LIVE EVENT
+
+Teams Registered: 40
+Teams Active: 37
+Teams Completed: 3
+
+────────────────────
+
+CODING A
+5 / 5 occupied
+
+CODING B
+4 / 5 occupied
+
+LOGIC A
+3 teams
+
+PUZZLE A
+6 teams
+
+RIDDLE A
+2 teams
+```
+
+And you can monitor every team.
+
+---
+
+# 🚨 Admin Controls
+
+You should have buttons for:
+
+* ⏸️ Pause event
+* ▶️ Resume event
+* 🚫 Disable challenge
+* 🔄 Reset team
+* ⏱️ Add/remove time
+* ⚠️ Disqualify team
+* 🏆 View leaderboard
+* 📊 Export results
+
+And **every admin action should be logged**.
+
+---
+
+# 🧠 The Complete Architecture
+
+I'd make the event flow:
+
+```text
+             PARTICIPANTS
+                  ↓
+             TEAM LOGIN
+                  ↓
+          TEAM DASHBOARD
+                  ↓
+        CURRENT MISSION
+                  ↓
+           QR LOCATION
+                  ↓
+       SERVER VALIDATION
+             ↙       ↘
+          WRONG       CORRECT
+            ↓            ↓
+          DENY       START TIMER
+                         ↓
+                    CHALLENGE
+                         ↓
+                      SUBMIT
+                         ↓
+                 SCORE + TIME
+                         ↓
+                 NEXT MISSION
+                         ↓
+                       ... 
+                         ↓
+                    10/10 DONE
+                         ↓
+                   FINAL SCORE
+                         ↓
+                   🏆 RANKING
+```
+
+### One important recommendation
+
+**Don't let participants choose their next challenge.** The backend should generate and control each team's route.
+
+That gives you three major benefits:
+
+1. **No crowding**
+2. **No skipping challenges**
+3. **Fair timing and scoring**
+
+And because your coding labs have a strict **5-minute timer**, I'd make those stations **server-controlled**, not browser-controlled, so refreshing the page doesn't reset the timer.
+
+If you want, I can next design the **actual 40-team routing matrix (Team 1–40 → Challenge 1–10)** so that the teams are distributed evenly and **Coding A/B are never together**, then we can turn that into the exact website/app logic.
