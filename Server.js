@@ -15,7 +15,7 @@ const challengeSeed = [
   {
     id: 'signal-01',
     number: 1,
-    name: 'Signal Breaker',
+    name: 'Coding 1',
     type: 'CODING',
     icon: '⌘',
     station: 'LAB A',
@@ -31,7 +31,7 @@ const challengeSeed = [
   {
     id: 'logic-01',
     number: 2,
-    name: 'Pattern Room',
+    name: 'Logical 1',
     type: 'LOGIC',
     icon: '◈',
     station: 'NORTH HALL',
@@ -48,7 +48,7 @@ const challengeSeed = [
   {
     id: 'puzzle-01',
     number: 3,
-    name: 'Cipher Garden',
+    name: 'Puzzle',
     type: 'PUZZLE',
     icon: '✦',
     station: 'COURTYARD',
@@ -65,7 +65,7 @@ const challengeSeed = [
   {
     id: 'riddle-01',
     number: 4,
-    name: 'Echo Chamber',
+    name: 'Riddle 1',
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
@@ -81,7 +81,7 @@ const challengeSeed = [
   {
     id: 'mystery-01',
     number: 5,
-    name: 'Hidden Current',
+    name: 'Quiz 1',
     type: 'MYSTERY',
     icon: '⚡',
     station: 'MAKER SPACE',
@@ -97,7 +97,7 @@ const challengeSeed = [
   {
     id: 'signal-02',
     number: 6,
-    name: 'Signal Breaker II',
+    name: 'Coding 2',
     type: 'CODING',
     icon: '⌘',
     station: 'LAB B',
@@ -113,7 +113,7 @@ const challengeSeed = [
   {
     id: 'logic-02',
     number: 7,
-    name: 'Grid Theory',
+    name: 'Logical 2',
     type: 'LOGIC',
     icon: '◈',
     station: 'EAST WING',
@@ -130,7 +130,7 @@ const challengeSeed = [
   {
     id: 'puzzle-02',
     number: 8,
-    name: 'Broken Compass',
+    name: 'Crossword',
     type: 'PUZZLE',
     icon: '✦',
     station: 'WEST STAIRS',
@@ -147,7 +147,7 @@ const challengeSeed = [
   {
     id: 'riddle-02',
     number: 9,
-    name: 'Final Frequency',
+    name: 'Riddle 2',
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
@@ -163,7 +163,7 @@ const challengeSeed = [
   {
     id: 'mystery-02',
     number: 10,
-    name: 'The Last Door',
+    name: 'Quiz 2',
     type: 'MYSTERY',
     icon: '⚡',
     station: 'FINISH LINE',
