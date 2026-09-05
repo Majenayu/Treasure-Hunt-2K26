@@ -179,7 +179,7 @@
     .mission-kicker { color: var(--orange-dark); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .12em; }
     .mission h3 { font: 700 32px 'Space Grotesk'; letter-spacing: -.06em; margin: 12px 0 8px; }
     .mission-location { color: var(--muted); font-size: 13px; margin-bottom: 25px; }
-    .mission-prompt { font-size: 18px; line-height: 1.5; max-width: 650px; margin: 22px 0; }
+    .mission-prompt { font-size: 18px; line-height: 1.5; max-width: 650px; margin: 22px 0; white-space: pre-line; }
     .question-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 14px 0; background: rgba(255,255,255,.35); }
     .question-number { color: var(--orange-dark); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
     .quiz-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -518,9 +518,14 @@
       const data = await api('/api/admin/questions');
       const questions = data.rounds;
       const plan = data.plan;
-      const planCard = (label, detail, mode) => `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${detail}</div><div class="card-subtitle">${mode}</div></div>`;
+       const planCard = (label, detail, mode) => {
+         const updatedMode = label === 'Coding questions' ? '10 serials · 1 at a time'
+           : label === 'Puzzle / Logic' ? '10 assigned sets · volunteer score'
+             : label === 'Mystery quiz' ? 'Set 1 + Set 2 · 1 at a time' : mode;
+         return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${detail}</div><div class="card-subtitle">${updatedMode}</div></div>`;
+       };
        const previewQuestion = (question, roundId, setIndex, questionIndex) => `<li><div class="question-item"><span>${escapeHtml(question.prompt)}${question.options ? `<div class="card-subtitle">Options: ${question.options.map(escapeHtml).join(' · ')}</div>` : ''}</span><button class="outline edit-question" data-question="${roundId}" data-set="${setIndex}" data-index="${questionIndex}">Edit</button></div></li>`;
-       const previewSets = (question) => question.sets.map((set, index) => `<details class="question-set"><summary>${question.type.toUpperCase() === 'MYSTERY' ? `Quiz round ${index + 1} · ${set.questions.length} questions` : `Set ${set.setNumber} · ${set.questions.length} question${set.questions.length === 1 ? '' : 's'}`}</summary><ol>${set.questions.map((item, questionIndex) => previewQuestion(item, question._id, index, questionIndex)).join('')}</ol></details>`).join('');
+       const previewSets = (question) => question.sets.map((set, index) => `<details class="question-set"><summary>${question.type.toUpperCase() === 'MYSTERY' ? `Quiz set ${index + 1} · ${set.questions.length} questions` : `Set ${set.setNumber} · ${set.questions.length} question${set.questions.length === 1 ? '' : 's'}`}</summary><ol>${set.questions.map((item, questionIndex) => previewQuestion(item, question._id, index, questionIndex)).join('')}</ol></details>`).join('');
        $('#view').innerHTML = `<div class="stats">${planCard('Coding questions', '10', '5 + 5 rounds · 1 at a time')}${planCard('Riddles', '6', '3 + 3 · fixed order')}${planCard('Puzzle / Logic', '60 + 60', '10 sets × 3 per round · volunteer unlock')}${planCard('Mystery quiz', '40', '20 + 20 · random per team')}</div><section class="card"><div class="card-heading"><div><h2 class="card-title">Question bank</h2><p class="card-subtitle">Add a mission or edit any question. Answer keys stay on the server and teams only receive their active round.</p></div><span class="tag">${questions.length} ROUNDS</span></div><form id="newQuestionForm" class="admin-form"><div class="card-heading"><div><h3 class="card-title">Add a question</h3><p class="card-subtitle">Create a new mission with an optional multiple-choice list.</p></div></div><div class="form-grid"><div class="field full"><label>Question prompt</label><textarea name="prompt" rows="2" placeholder="What should the team solve?" required></textarea></div><div class="field"><label>Mission name</label><input name="name" placeholder="New mission" required></div><div class="field"><label>Question type</label><select name="type"><option value="ACTIVITY">Activity</option><option value="CODING">Coding</option><option value="LOGIC">Logic</option><option value="PUZZLE">Puzzle</option><option value="RIDDLE">Riddle</option><option value="MYSTERY">Mystery quiz</option></select></div><div class="field"><label>Correct answer</label><input name="answer" placeholder="Correct answer" required></div><div class="field"><label>Options (optional)</label><input name="options" placeholder="Option A, Option B, Option C"></div><div class="field full"><label>Hint</label><input name="hint" placeholder="A helpful clue for the team"></div></div><div class="form-actions"><button class="primary" type="submit">Add question ↗</button></div></form><div class="challenge-list">${questions.map((question) => `<div class="challenge-row"><span class="challenge-index">0${question.questionNumber}</span><div class="challenge-info"><strong>${escapeHtml(question.name)}</strong><span>${escapeHtml(question.code)} · ${question.setCount} set${question.setCount === 1 ? '' : 's'} · ${question.questionsPerSet} question${question.questionsPerSet === 1 ? '' : 's'} per team · ${escapeHtml(question.eventPoolScope)}</span></div><span class="tag">${escapeHtml(question.type)}</span><button class="outline delete-question" data-question="${question._id}">Delete</button></div><div class="question-previews">${previewSets(question)}</div>`).join('')}</div></section><dialog id="questionEditor" class="editor-dialog"><form id="questionEditForm"><h2>Edit question</h2><p>Update the prompt or choices. Leave the answer blank to keep the current answer.</p><input type="hidden" name="questionId"><input type="hidden" name="setIndex"><input type="hidden" name="questionIndex"><div class="field"><label>Question prompt</label><textarea name="prompt" rows="3" required></textarea></div><div class="field"><label>Correct answer</label><input name="answer" placeholder="Leave blank to keep current answer"></div><div class="field"><label>Options (optional)</label><input name="options" placeholder="Option A, Option B, Option C"></div><div class="form-actions"><button type="button" class="outline" id="cancelQuestionEdit">Cancel</button><button class="primary" type="submit">Save question</button></div></form></dialog>`;
        $('#newQuestionForm').addEventListener('submit', async (event) => {
          event.preventDefault();
@@ -594,6 +599,7 @@
       const locationRequired = challenge && volunteerTypes.includes(challenge.type);
       const waitingForVolunteer = locationRequired && !team.currentChallenge;
       const volunteerScored = challenge && ['LOGIC', 'PUZZLE'].includes(challenge.type);
+       const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
       const questionCards = (challenge?.questions || []).map((question, index) => {
         const answerControl = volunteerScored
@@ -601,14 +607,21 @@
           : question.options
             ? `<div class="quiz-options">${question.options.map((option) => `<label class="quiz-option"><input type="radio" name="quiz-${index}" class="mission-quiz-answer" data-answer-index="${index}" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join('')}</div>`
             : `<div class="field"><label for="answer-${index}">Your answer</label><input id="answer-${index}" class="mission-answer" data-answer-index="${index}" placeholder="Type your answer" autocomplete="off"></div>`;
-        return `<div class="question-card"><div class="question-number">${challenge.type === 'RIDDLE' ? `Riddle pass ${challenge.riddleStep} / ${challenge.riddleTotal}` : `Question ${index + 1}`}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
+         const questionLabel = challenge.type === 'RIDDLE'
+           ? `Riddle pass ${challenge.riddleStep} / ${challenge.riddleTotal}`
+           : challenge.type === 'CODING'
+             ? `Coding question ${challenge.questionSet} / 10`
+             : challenge.type === 'MYSTERY'
+               ? `Quiz question ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}`
+               : `Question ${index + 1}`;
+         return `<div class="question-card"><div class="question-number">${questionLabel}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
       }).join('');
-      const roundLabel = challenge?.quizRound
-        ? `QUIZ ROUND ${challenge.quizRound} · 20 QUESTIONS`
+       const roundLabel = challenge?.quizRound
+         ? `QUIZ SET ${challenge.quizRound} · QUESTION ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}`
         : challenge?.riddleStep
           ? `PASS ${challenge.riddleStep} / ${challenge.riddleTotal}`
           : challenge?.questionSet
-            ? `SET ${challenge.questionSet} / ${challenge.type === 'CODING' ? '5' : '10'}`
+           ? `SET ${challenge.questionSet} / 10`
             : '';
       const timerLabel = challenge?.timeLimit ? `${formatTime(Math.max(0, challenge.timeLimit - team.missionSeconds))} remaining` : 'No timer';
       const locationInfo = challenge?.type === 'RIDDLE'
@@ -622,15 +635,20 @@
        const activeContent = riddleScanRequired
          ? `<div class="mission-kicker">QR scan required</div><p class="mission-prompt">Scan the partial riddle QR to unlock pass ${challenge.riddleStep}.</p><button id="startMission" data-riddle="true" class="primary">Scan riddle QR ↗</button><p class="card-subtitle" style="margin-top:14px">Enter the code from the QR. No volunteer or physical location is needed.</p>`
          : volunteerScored
-        ? `${questionCards}<p class="card-subtitle" style="margin-top:14px">Solve this clue set with your team. The volunteer will enter your score out of 10 to release the next clue.</p>`
+         ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
+         : mysteryQuiz
+           ? `${questionCards}<p class="card-subtitle" style="margin-top:14px">Choose an option to continue. Your answer result and points are not shown during the quiz.</p>`
         : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : challenge.type === 'RIDDLE' ? 'Submit pass ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
       const missionContent = complete
         ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ${totalMissions} stations. Stay sharp — the final standings are still moving.</p><button class="primary" data-view="teamboard">View leaderboard ↗</button>`
          : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.currentChallenge ? activeContent : waitingContent}`;
       const progressPercent = Math.min(100, Math.round((team.completed / totalMissions) * 100));
-      $('#view').innerHTML = `<div class="team-layout"><section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div><div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div></section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div><div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div><div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
+       const participantScore = mysteryQuiz ? '<div class="hero-score"><span>QUIZ IN PROGRESS</span></div>' : `<div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div>`;
+       const participantPoints = mysteryQuiz ? '<div class="rank-row"><span class="rank-number">01</span><strong>Quiz status</strong><span>IN PROGRESS</span></div>' : `<div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div>`;
+       $('#view').innerHTML = `<div class="team-layout"><section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
        if ($('#startMission')) $('#startMission').addEventListener('click', startMission);
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
+       document.querySelectorAll('.mission-quiz-answer').forEach((input) => input.addEventListener('change', submitAnswer));
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
        if (team.currentChallenge && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
        else if (!team.currentChallenge || riddleScanRequired || volunteerScored) scheduleRender(3000);
@@ -681,7 +699,12 @@
         }, []);
         const submittedAnswers = quizAnswers.length ? quizAnswers : answers;
         const data = await api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers: submittedAnswers }) });
-       if (data.correct) {
+        if (data.quizAdvanced) {
+          render();
+        } else if (data.quizComplete) {
+          showToast('Quiz complete. Next clue unlocked.');
+          render();
+        } else if (data.correct) {
           showToast(data.riddleAdvanced ? `Pass ${data.riddleStep - 1} cleared. The next riddle is ready.` : data.totalQuestions > 1 ? `Quiz scored ${data.correctAnswers}/${data.totalQuestions}.` : 'Mission cleared. Next station unlocked.');
           render();
        } else if (data.timedOut && data.completed) {

@@ -179,16 +179,46 @@ const challengeSeed = [
 
 const QUESTION_SET_COUNT = 10;
 const CODING_QUESTIONS = [
-  { prompt: 'What is the output of: 2 + 3 * 4?', answer: '14' },
-  { prompt: 'A loop starts at 1 and doubles four times. What number does it finish on?', answer: '16' },
-  { prompt: 'What is the output of: let x = 7; x += 5; console.log(x);', answer: '12' },
-  { prompt: 'What is the output of: [4, 8, 15, 16, 23, 42][2]?', answer: '15' },
-  { prompt: 'How many times does this loop print: for (let i = 0; i < 5; i++)?', answer: '5' },
-  { prompt: 'What is the output of: 10 % 3?', answer: '1' },
-  { prompt: 'A function returns n * n. What does it return when n is 9?', answer: '81' },
-  { prompt: 'What is the output of: "Code" + "Hunt"?', answer: 'CodeHunt' },
-  { prompt: 'If a binary value is 1010, what is its decimal value?', answer: '10' },
-  { prompt: 'An array has 6 items. What is the index of its last item?', answer: '5' },
+  {
+    prompt: 'Q1 — The Missing Identification Number\nInput: 1 2 3 4 5 7 8 9 10\nOutput: 6\nWrite the program described and enter the output for the supplied input.',
+    answer: '6',
+  },
+  {
+    prompt: 'Q2 — The Final Champion\nInput: 45 82 61\nOutput: 82\nFind and enter the highest score.',
+    answer: '82',
+  },
+  {
+    prompt: 'Q3 — The Selective Attendance Register\nInput: 7 11 24 35 42 51 68 73\nOutput: 24 42 68\nEnter the even values in their original order.',
+    answer: '24 42 68',
+  },
+  {
+    prompt: 'Q4 — The Lost Registration Number\nInput: 5 10 25 17 42 31 42\nOutput: 3\nEnter the first index where the requested value is found.',
+    answer: '3',
+  },
+  {
+    prompt: 'Q5 — The Classroom Matrix\nInput: 2 3 10 20 30 5 15 25\nOutput: 105\nEnter the sum of all values in the matrix.',
+    answer: '105',
+  },
+  {
+    prompt: 'Q6 — The Duplicate Identity Check\nInput: RAHUL RAHUL\nOutput: MATCH\nEnter the result of comparing the two strings.',
+    answer: 'MATCH',
+  },
+  {
+    prompt: 'Q7 — The Modular Scoring Machine\nInput: 24 18\nOutput: 42\nEnter the value returned by the addition function.',
+    answer: '42',
+  },
+  {
+    prompt: 'Q8 — The Exchange Without Losing the Originals\nInput: 10 25\nOutput: 25 10\nEnter the two values after the pointer-based swap.',
+    answer: '25 10',
+  },
+  {
+    prompt: 'Q9 — The Complete Student Profile\nInput: 101 Arun CSE 45000\nOutput: 101 Arun CSE 45000\nEnter the formatted student record.',
+    answer: '101 Arun CSE 45000',
+  },
+  {
+    prompt: 'Q10 — The Symmetric Access Passcode\nInput: RADAR\nOutput: PALINDROME\nEnter the palindrome check result.',
+    answer: 'PALINDROME',
+  },
 ];
 const LOGIC_QUESTIONS = [
   ['Complete: 2, 4, 8, 16, __', '32'],
@@ -262,48 +292,58 @@ const RIDDLE_QUESTIONS = [
   { prompt: 'I can be cracked, made, told, and played. What am I?', answer: 'joke' },
   { prompt: 'I have cities but no houses and rivers but no water. What am I?', answer: 'map' },
 ];
-const MYSTERY_POOL = [
-  ['What is the capital of India?', ['Mumbai', 'New Delhi', 'Kolkata', 'Chennai'], 'New Delhi'],
-  ['Which planet is known as the Red Planet?', ['Venus', 'Mars', 'Jupiter', 'Saturn'], 'Mars'],
-  ['What is the chemical symbol for gold?', ['Ag', 'Fe', 'Au', 'Go'], 'Au'],
-  ['How many sides does a hexagon have?', ['Five', 'Six', 'Seven', 'Eight'], 'Six'],
-  ['Who wrote Romeo and Juliet?', ['Dickens', 'Shakespeare', 'Austen', 'Frost'], 'Shakespeare'],
-  ['What is the largest ocean on Earth?', ['Atlantic', 'Indian', 'Arctic', 'Pacific'], 'Pacific'],
-  ['Which language runs in a web browser?', ['Python', 'JavaScript', 'C++', 'SQL'], 'JavaScript'],
-  ['What is 12 × 8?', ['86', '96', '108', '112'], '96'],
-  ['Which gas do plants absorb?', ['Oxygen', 'Nitrogen', 'Carbon dioxide', 'Hydrogen'], 'Carbon dioxide'],
-  ['What is the first element on the periodic table?', ['Helium', 'Hydrogen', 'Oxygen', 'Carbon'], 'Hydrogen'],
-  ['Which instrument has black and white keys?', ['Guitar', 'Piano', 'Flute', 'Drum'], 'Piano'],
-  ['How many continents are there?', ['Five', 'Six', 'Seven', 'Eight'], 'Seven'],
-  ['What is the square root of 144?', ['10', '11', '12', '14'], '12'],
-  ['Which animal is called the ship of the desert?', ['Horse', 'Camel', 'Elephant', 'Yak'], 'Camel'],
-  ['What is the hardest natural substance?', ['Iron', 'Diamond', 'Quartz', 'Granite'], 'Diamond'],
-  ['Which organ pumps blood?', ['Lung', 'Brain', 'Heart', 'Liver'], 'Heart'],
-  ['What is the freezing point of water in Celsius?', ['0', '10', '32', '100'], '0'],
-  ['Which is the nearest star to Earth?', ['Sirius', 'The Sun', 'Polaris', 'Vega'], 'The Sun'],
-  ['What is the binary representation of decimal 2?', ['00', '01', '10', '11'], '10'],
-  ['Which shape has three sides?', ['Circle', 'Square', 'Triangle', 'Rectangle'], 'Triangle'],
-  ['What is the largest mammal?', ['Elephant', 'Blue whale', 'Giraffe', 'Hippopotamus'], 'Blue whale'],
-  ['Which country is famous for the pyramids of Giza?', ['Greece', 'Egypt', 'Mexico', 'Peru'], 'Egypt'],
-  ['How many minutes are in one hour?', ['30', '45', '60', '90'], '60'],
-  ['What does CPU stand for?', ['Central Processing Unit', 'Computer Power Utility', 'Core Program User', 'Central Print Unit'], 'Central Processing Unit'],
-  ['Which number is prime?', ['21', '27', '29', '33'], '29'],
-  ['What is the boiling point of water at sea level in Celsius?', ['50', '90', '100', '120'], '100'],
-  ['Which direction does the sun rise from?', ['North', 'South', 'East', 'West'], 'East'],
-  ['What is the main language used to style web pages?', ['HTML', 'CSS', 'JSON', 'XML'], 'CSS'],
-  ['Which metal is liquid at room temperature?', ['Copper', 'Mercury', 'Aluminium', 'Zinc'], 'Mercury'],
-  ['How many bytes are in a kilobyte in common computing usage?', ['100', '512', '1024', '2048'], '1024'],
-  ['Which is a renewable energy source?', ['Coal', 'Solar power', 'Petrol', 'Natural gas'], 'Solar power'],
-  ['What is the opposite of binary 1 in a bit?', ['0', '2', '10', 'False and true'], '0'],
-  ['Which country gifted the Statue of Liberty to the United States?', ['France', 'Spain', 'Italy', 'Canada'], 'France'],
-  ['What is the process by which plants make food?', ['Respiration', 'Photosynthesis', 'Digestion', 'Fermentation'], 'Photosynthesis'],
-  ['Which device is used to measure temperature?', ['Barometer', 'Thermometer', 'Altimeter', 'Compass'], 'Thermometer'],
-  ['How many players are on a football team on the field?', ['9', '10', '11', '12'], '11'],
-  ['Which file extension is commonly used for JavaScript?', ['.css', '.js', '.py', '.java'], '.js'],
-  ['What is 15% of 200?', ['15', '20', '30', '40'], '30'],
-  ['Which planet is famous for its rings?', ['Mercury', 'Earth', 'Saturn', 'Neptune'], 'Saturn'],
-  ['What does QR stand for in QR code?', ['Quick Response', 'Query Register', 'Quality Read', 'Quick Route'], 'Quick Response'],
-].map(([prompt, options, answer], index) => ({ id: `mystery-${index + 1}`, prompt, options, answer }));
+const MYSTERY_QUIZ_SETS = [
+  [
+    ['What will be the output?\nint x = 5;\nx++;\nprintf("%d", x);', ['4', '5', '6', '7'], '6'],
+    ['Which is the largest organ in the human body?', ['Liver', 'Brain', 'Skin', 'Lungs'], 'Skin'],
+    ['In Avengers: Endgame, what does Tony Stark say before snapping his fingers?', ['Avengers, assemble!', 'I can do this all day', 'I am Iron Man', 'We are inevitable'], 'I am Iron Man'],
+    ['What can run but never walks?', ['A car', 'A river', 'A dog', 'A person'], 'A river'],
+    ['Which keyword is used to return a value from a function in C?', ['break', 'return', 'exit', 'continue'], 'return'],
+    ['Which planet rotates in the opposite direction to most planets?', ['Mars', 'Jupiter', 'Venus', 'Mercury'], 'Venus'],
+    ['Who is the only cricketer to have scored 100 international centuries?', ['Virat Kohli', 'Ricky Ponting', 'Sachin Tendulkar', 'Brian Lara'], 'Sachin Tendulkar'],
+    ['What has an eye but cannot see?', ['A camera', 'A needle', 'A storm', 'A potato'], 'A needle'],
+    ['Which of these is a Python list?', ['{1, 2, 3}', '(1, 2, 3)', '[1, 2, 3]', '<1, 2, 3>'], '[1, 2, 3]'],
+    ["In 3 Idiots, what is Rancho's real name?", ['Raju Rastogi', 'Farhan Qureshi', 'Chatur Ramalingam', 'Phunsukh Wangdu'], 'Phunsukh Wangdu'],
+    ['What is the hardest naturally occurring substance?', ['Iron', 'Diamond', 'Quartz', 'Graphite'], 'Diamond'],
+    ['What is the output?\nfor i in range(3):\n    print(i)', ['1 2 3', '0 1 2', '0 1 2 3', '3 2 1'], '0 1 2'],
+    ['Velcro was inspired by what?', ['Spider webs', 'Tree bark', 'Burrs sticking to animal fur', 'Fish scales'], 'Burrs sticking to animal fur'],
+    ['Which loop in C is guaranteed to execute at least once?', ['for', 'while', 'do-while', 'nested loop'], 'do-while'],
+    ['Which animal can have a tongue longer than its body?', ['Chameleon', 'Giraffe', 'Frog', 'Snake'], 'Chameleon'],
+    ['What is the first index of an array in C?', ['0', '1', '-1', 'Depends on the array'], '0'],
+    ['Which function is used in Python to find the length of a list or string?', ['count()', 'size()', 'length()', 'len()'], 'len()'],
+    ['What does this print?\nprint("Python"[0])', ['P', 'y', 'Python', '0'], 'P'],
+    ['Which keyword is commonly used for decision-making in Python?', ['when', 'if', 'check', 'decide'], 'if'],
+    ['What data type is used to store a decimal number in C?', ['int', 'char', 'float', 'double'], 'float'],
+  ],
+  [
+    ['What will be the output?\nint x = 5;\nx++;\nprintf("%d", x);', ['4', '5', '6', '7'], '6'],
+    ['Which animal has three hearts?', ['Dolphin', 'Octopus', 'Shark', 'Whale'], 'Octopus'],
+    ['In Avengers: Endgame, what does Tony Stark say before snapping his fingers?', ['Avengers, assemble!', 'I can do this all day', 'I am Iron Man', 'We are inevitable'], 'I am Iron Man'],
+    ['Which planet rotates in the opposite direction to most planets?', ['Mars', 'Jupiter', 'Venus', 'Mercury'], 'Venus'],
+    ['Which keyword is used to return a value from a function in C?', ['break', 'return', 'exit', 'continue'], 'return'],
+    ['Who is the only cricketer to have scored 100 international centuries?', ['Virat Kohli', 'Ricky Ponting', 'Sachin Tendulkar', 'Brian Lara'], 'Sachin Tendulkar'],
+    ['Which of these is a Python list?', ['{1, 2, 3}', '(1, 2, 3)', '[1, 2, 3]', '<1, 2, 3>'], '[1, 2, 3]'],
+    ['Which is the largest organ in the human body?', ['Liver', 'Brain', 'Skin', 'Lungs'], 'Skin'],
+    ['What can run but never walks?', ['A car', 'A river', 'A dog', 'A person'], 'A river'],
+    ['Which loop in C is guaranteed to execute at least once?', ['for', 'while', 'do-while', 'nested loop'], 'do-while'],
+    ["In 3 Idiots, what is Rancho's real name?", ['Raju Rastogi', 'Farhan Qureshi', 'Chatur Ramalingam', 'Phunsukh Wangdu'], 'Phunsukh Wangdu'],
+    ['What is the hardest naturally occurring substance?', ['Iron', 'Diamond', 'Quartz', 'Graphite'], 'Diamond'],
+    ['What does this print?\nprint("Python"[0])', ['P', 'y', 'Python', '0'], 'P'],
+    ['Velcro was inspired by what?', ['Spider webs', 'Tree bark', 'Burrs sticking to animal fur', 'Fish scales'], 'Burrs sticking to animal fur'],
+    ['What is the first index of an array in C?', ['0', '1', '-1', 'Depends on the array'], '0'],
+    ['Which animal can have a tongue longer than its body?', ['Chameleon', 'Giraffe', 'Frog', 'Snake'], 'Chameleon'],
+    ['Which function is used in Python to find the length of a list or string?', ['count()', 'size()', 'length()', 'len()'], 'len()'],
+    ['What is the hardest naturally occurring substance?', ['Iron', 'Diamond', 'Quartz', 'Graphite'], 'Diamond'],
+    ['Which keyword is commonly used for decision-making in Python?', ['when', 'if', 'check', 'decide'], 'if'],
+    ['What has an eye but cannot see?', ['A camera', 'A needle', 'A storm', 'A potato'], 'A needle'],
+  ],
+].map((set, setIndex) => set.map(([prompt, options, answer], index) => ({
+  id: `mystery-${setIndex + 1}-${index + 1}`,
+  prompt,
+  options,
+  answer,
+})));
+const MYSTERY_POOL = MYSTERY_QUIZ_SETS.flat();
 
 function makeQuestion(type, seed, index) {
   const n = seed * 10 + index + 1;
@@ -377,15 +417,14 @@ function makeQuestion(type, seed, index) {
 
 function makeQuestionSets(challenge) {
   if (challenge.type === 'CODING') {
-    const start = challenge.number < 6 ? 0 : 5;
-    return CODING_QUESTIONS.slice(start, start + 5).map((question) => [question]);
+    return CODING_QUESTIONS.map((question) => [question]);
   }
   if (challenge.type === 'RIDDLE') {
     const start = challenge.number < 9 ? 0 : 3;
     return [RIDDLE_QUESTIONS.slice(start, start + 3)];
   }
   if (challenge.type === 'MYSTERY') {
-    return [MYSTERY_POOL.slice(0, 20), MYSTERY_POOL.slice(20)];
+    return MYSTERY_QUIZ_SETS;
   }
   if (challenge.type === 'LOGIC' || challenge.type === 'PUZZLE') {
     const bank = challenge.type === 'LOGIC' ? LOGIC_QUESTIONS : PUZZLE_QUESTIONS;
@@ -393,9 +432,9 @@ function makeQuestionSets(challenge) {
       Array.from({ length: 3 }, (_, questionIndex) => bank[(setIndex * 3 + questionIndex) % bank.length])
     ));
   }
-  const setCount = challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT;
+  const setCount = QUESTION_SET_COUNT;
   return Array.from({ length: setCount }, (_, setIndex) => (
-    Array.from({ length: challenge.type === 'CODING' ? 1 : 3 }, (_, questionIndex) => (
+    Array.from({ length: 3 }, (_, questionIndex) => (
       makeQuestion(challenge.type, challenge.number * 100 + setIndex * 3, questionIndex)
     ))
   ));
@@ -433,6 +472,8 @@ function createTeam(teamId) {
     completedAt: null,
     currentChallenge: null,
     questionAssignments: {},
+    mysteryProgress: {},
+    mysteryCorrect: {},
     riddleProgress: {},
     riddleScanUnlocked: {},
     startedAt: null,
@@ -563,14 +604,9 @@ function getTeamChallenge(team) {
 function assignedQuestions(team, challenge) {
   if (!challenge) return [];
   if (challenge.type === 'MYSTERY') {
-    if (!team.mysteryOrder) {
-      team.mysteryOrder = MYSTERY_POOL.map((_, index) => ({
-        index,
-        key: crypto.createHash('sha256').update(`${team.id}:mystery:${index}`).digest('hex'),
-      })).sort((a, b) => a.key.localeCompare(b.key)).map((item) => item.index);
-    }
-    const start = challenge.number < 9 ? 0 : 20;
-    return team.mysteryOrder.slice(start, start + 20).map((index) => MYSTERY_POOL[index]);
+    const quizSet = challenge.number < 9 ? MYSTERY_QUIZ_SETS[0] : MYSTERY_QUIZ_SETS[1];
+    const progress = team.mysteryProgress?.[challenge.id] || 0;
+    return quizSet.slice(progress, progress + 1);
   }
   const assignment = team.questionAssignments[challenge.id] ?? 0;
   if (challenge.type === 'RIDDLE') {
@@ -637,6 +673,7 @@ function publicTeam(team) {
     if (challenge.type === 'MYSTERY') {
       safeChallenge.quizRound = challenge.number < 9 ? 1 : 2;
       safeChallenge.quizTotal = 20;
+      safeChallenge.quizQuestion = (team.mysteryProgress?.[challenge.id] || 0) + 1;
     } else {
       safeChallenge.questionSet = assignment + 1;
     }
@@ -645,7 +682,9 @@ function publicTeam(team) {
       safeChallenge.riddleTotal = challenge.questionSets[0]?.length || 3;
       safeChallenge.riddleScanRequired = !team.riddleScanUnlocked?.[challenge.id];
     }
-    safeChallenge.questions = assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
+    safeChallenge.questions = ['LOGIC', 'PUZZLE'].includes(challenge.type)
+      ? []
+      : assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
   }
   return {
     id: team.id,
@@ -818,11 +857,11 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     difficulty: challenge.type === 'CODING' ? 'hard' : 'medium',
     name: challenge.name,
     disabled: challenges.get(challenge.id).disabled,
-    setCount: challenge.type === 'CODING' ? 5 : challenge.type === 'RIDDLE' ? 1 : challenge.type === 'MYSTERY' ? 'random per team' : QUESTION_SET_COUNT,
+    setCount: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? 1 : challenge.type === 'MYSTERY' ? 2 : QUESTION_SET_COUNT,
     questionsPerSet: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : challenge.type === 'CODING' ? 1 : 3,
-    totalQuestions: challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 5 : QUESTION_SET_COUNT * 3),
+    totalQuestions: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 10 : QUESTION_SET_COUNT * 3),
     eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : QUESTION_SET_COUNT * 3,
-    eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'shared pool; randomized per team' : 'per round',
+    eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'uploaded Set 1 or Set 2; sequential per team' : 'per round',
     sets: stored.questionSets.map((set, setIndex) => ({
       setNumber: setIndex + 1,
       questions: set.map(publicQuestion),
@@ -832,11 +871,11 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
   res.json({
     rounds,
     plan: {
-      coding: { total: 10, roundOne: 5, roundTwo: 5, perTeam: 1, mode: 'timed · one at a time' },
+      coding: { total: 10, roundOne: 10, roundTwo: 10, perTeam: 1, mode: 'shared pool · one serial per team' },
       riddles: { total: 6, roundOne: 3, roundTwo: 3, perTeam: 3, mode: 'fixed order · no mixing' },
-      puzzles: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 3, mode: 'location volunteer verification' },
-      logic: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 3, mode: 'location volunteer verification' },
-      mystery: { total: 40, roundOne: 20, roundTwo: 20, perTeam: 20, mode: 'in-app quiz · randomized per team' },
+      puzzles: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
+      logic: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
+      mystery: { total: 40, roundOne: 20, roundTwo: 20, perTeam: 20, mode: 'uploaded set · one at a time' },
     },
   });
 });
@@ -981,7 +1020,8 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.riddleProgress = {};
     team.riddleScanUnlocked = {};
     team.startedPauseSeconds = 0;
-    team.mysteryOrder = null;
+    team.mysteryProgress = {};
+    team.mysteryCorrect = {};
   }
   state.status = 'PAUSED';
   state.startedAt = null;
@@ -1033,7 +1073,8 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.questionAssignments = {};
   team.riddleProgress = {};
   team.riddleScanUnlocked = {};
-  team.mysteryOrder = null;
+  team.mysteryProgress = {};
+  team.mysteryCorrect = {};
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
 });
@@ -1145,6 +1186,24 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   if (challenge.type === 'RIDDLE' && !team.riddleScanUnlocked?.[challenge.id]) {
     return res.status(409).json({ error: 'Scan the QR code to unlock this riddle pass.' });
   }
+  if (challenge.type === 'MYSTERY') {
+    const answer = String(submittedAnswers[0] || '').trim();
+    if (!answer || !expectedQuestions[0]) {
+      return res.json({ ok: true, quizAwaitingAnswer: true, team: publicTeam(team) });
+    }
+    const progress = team.mysteryProgress?.[challenge.id] || 0;
+    const correct = answer.toLowerCase() === expectedQuestions[0].answer.toLowerCase();
+    team.mysteryProgress[challenge.id] = progress + 1;
+    team.mysteryCorrect[challenge.id] = (team.mysteryCorrect[challenge.id] || 0) + (correct ? 1 : 0);
+    const totalQuestions = MYSTERY_QUIZ_SETS[challenge.number < 9 ? 0 : 1].length;
+    if (progress + 1 < totalQuestions) {
+      return res.json({ ok: true, quizAdvanced: true, quizQuestion: progress + 2, quizTotal: totalQuestions, team: publicTeam(team) });
+    }
+    const earnedPoints = Math.round(((team.mysteryCorrect[challenge.id] || 0) / totalQuestions) * challenge.points);
+    completeChallenge(team, challenge, elapsed, earnedPoints);
+    writeAudit('QUIZ COMPLETED', `${team.id} completed ${challenge.name}`, team.id);
+    return res.json({ ok: true, quizComplete: true, team: publicTeam(team) });
+  }
   if (timedOut && challenge.timeLimit > 0) {
     const earnedPoints = Math.round(challenge.points * 0.2);
     completeChallenge(team, challenge, elapsed, earnedPoints);
@@ -1154,14 +1213,8 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   const correctAnswers = expectedQuestions.reduce((count, question, index) => (
     count + (String(submittedAnswers[index] || '').trim().toLowerCase() === question.answer.toLowerCase() ? 1 : 0)
   ), 0);
-  const isMysteryQuiz = challenge.type === 'MYSTERY';
-  const quizComplete = isMysteryQuiz
-    && submittedAnswers.length === expectedQuestions.length
-    && expectedQuestions.every((_, index) => String(submittedAnswers[index] || '').trim().length > 0);
   const correct = !timedOut
-    && (isMysteryQuiz
-      ? quizComplete
-      : submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length);
+    && submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length;
   if (!correct) {
     writeAudit('ANSWER MISSED', `${team.id} attempted ${challenge.name}`, team.id);
     return res.json({ ok: true, correct: false, timedOut: false, team: publicTeam(team) });
@@ -1176,9 +1229,7 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
       return res.json({ ok: true, correct: true, riddleAdvanced: true, riddleStep: step + 2, riddleTotal: total, team: publicTeam(team) });
     }
   }
-  const earnedPoints = isMysteryQuiz
-    ? Math.round((correctAnswers / expectedQuestions.length) * challenge.points)
-    : challenge.points;
+  const earnedPoints = challenge.points;
   completeChallenge(team, challenge, elapsed, earnedPoints);
   writeAudit('MISSION CLEARED', `${team.id} completed ${challenge.name}`, team.id);
   res.json({ ok: true, correct: true, correctAnswers, totalQuestions: expectedQuestions.length, earnedPoints, score: team.score, team: publicTeam(team) });

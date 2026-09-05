@@ -1,0 +1,124 @@
+1. What will be the output?
+int x = 5;
+x++;
+printf("%d", x);
+A) 4
+B) 5
+C) 6
+D) 7
+Answer: C) 6
+2. Which animal has three hearts?
+A) Dolphin
+B) Octopus
+C) Shark
+D) Whale
+Answer: B) Octopus
+3. In Avengers: Endgame, what does Tony Stark say before snapping his fingers?
+A) Avengers, assemble!
+B) I can do this all day
+C) I am Iron Man
+D) We are inevitable
+Answer: C) I am Iron Man
+4. Which planet rotates in the opposite direction to most planets?
+A) Mars
+B) Jupiter
+C) Venus
+D) Mercury
+Answer: C) Venus
+5. Which keyword is used to return a value from a function in C?
+A) break
+B) return
+C) exit
+D) continue
+Answer: B) return
+6. Who is the only cricketer to have scored 100 international centuries?
+A) Virat Kohli
+B) Ricky Ponting
+C) Sachin Tendulkar
+D) Brian Lara
+Answer: C) Sachin Tendulkar
+7. Which of these is a Python list?
+A) {1, 2, 3}
+B) (1, 2, 3)
+C) [1, 2, 3]
+D) <1, 2, 3>
+Answer: C) [1, 2, 3]
+8. Which is the largest organ in the human body?
+A) Liver
+B) Brain
+C) Skin
+D) Lungs
+Answer: C) Skin
+9. What can run but never walks?
+A) A car
+B) A river
+C) A dog
+D) A person
+Answer: B) A river
+10. Which loop in C is guaranteed to execute at least once?
+A) for
+B) while
+C) do-while
+D) nested loop
+Answer: C) do-while
+11. In 3 Idiots, what is Rancho's real name?
+A) Raju Rastogi
+B) Farhan Qureshi
+C) Chatur Ramalingam
+D) Phunsukh Wangdu
+Answer: D) Phunsukh Wangdu
+12. What is the hardest naturally occurring substance?
+A) Iron
+B) Diamond
+C) Quartz
+D) Graphite
+Answer: B) Diamond
+13. What does this print?
+print("Python"[0])
+A) P
+B) y
+C) Python
+D) 0
+Answer: A) P
+14. Velcro was inspired by what?
+A) Spider webs
+B) Tree bark
+C) Burrs sticking to animal fur
+D) Fish scales
+Answer: C) Burrs sticking to animal fur
+15. What is the first index of an array in C?
+A) 0
+B) 1
+C) -1
+D) Depends on the array
+Answer: A) 0
+16. Which animal can have a tongue longer than its body?
+A) Chameleon
+B) Giraffe
+C) Frog
+D) Snake
+Answer: A) Chameleon
+17. Which function is used in Python to find the length of a list or string?
+A) count()
+B) size()
+C) length()
+D) len()
+Answer: D) len()
+18. What is the hardest naturally occurring substance?
+A) Iron
+B) Diamond
+C) Quartz
+D) Graphite
+Answer: B) Diamond
+19. Which keyword is commonly used for decision-making in Python?
+A) when
+B) if
+C) check
+D) decide
+Answer: B) if
+20. What has an eye but cannot see?
+A) A camera
+B) A needle
+C) A storm
+D) A potato
+Answer: B) A needle

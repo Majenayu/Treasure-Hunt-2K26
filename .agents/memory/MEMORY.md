@@ -1,1 +1,2 @@
 - [Coding timeout scoring](coding-timeout-rule.md) — expired Coding missions advance automatically with 20% points and never deduct for wrong submissions.
+- [Question delivery rules](question-delivery-rules.md) — Quiz/Coding expose limited sequential questions; Logic/Puzzle/Crossword expose only assigned sets.
