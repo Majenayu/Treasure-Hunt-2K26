@@ -2,10 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#f26a3d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="description" content="CodeHunt — The Orange Circuit mission control">
   <title>CodeHunt / The Orange Circuit</title>
+  <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -313,6 +317,134 @@
     .status.finished { color: #ff956f; }
     .error { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #fca5a5; }
     .toast { background: #111e35; border-left-color: #f26a3d; color: #eaf0ff; }
+    /* Phone app shell: account for iOS safe areas and keep every control thumb-friendly. */
+    @media (max-width: 620px) {
+      :root { --mobile-gutter: 16px; --mobile-nav-height: 64px; }
+      html, body { min-height: 100%; }
+      body { -webkit-text-size-adjust: 100%; }
+      button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+      button, .tab, .outline, .primary, .toggle, .quiz-option { min-height: 44px; }
+      .shell, .app { min-height: 100dvh; }
+
+      .login-panel {
+        min-height: 100dvh;
+        padding: max(22px, env(safe-area-inset-top)) var(--mobile-gutter) max(24px, env(safe-area-inset-bottom));
+        align-items: start;
+      }
+      .login-card { margin: auto 0; }
+      .login-heading h2 { font-size: clamp(29px, 8vw, 34px); }
+      .login-heading p { margin-bottom: 24px; font-size: 14px; }
+      .tabs { gap: 2px; margin-inline: -2px; }
+      .tab { padding: 10px 5px; font-size: 12px; white-space: nowrap; }
+      .field input, .field textarea, .field select { font-size: 16px; }
+      .primary.wide { min-height: 48px; }
+
+      .sidebar {
+        height: auto;
+        min-height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+        padding: 0 var(--mobile-gutter);
+        background: rgba(8, 13, 26, .94);
+        border-right: 0;
+        border-top: 1px solid rgba(242,106,61,.2);
+        box-shadow: 0 -12px 30px rgba(0,0,0,.2);
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+      }
+      .nav {
+        height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        align-items: stretch;
+        gap: 4px;
+      }
+      .nav button {
+        min-height: 44px;
+        align-self: center;
+        justify-content: center;
+        border-radius: 12px;
+        color: rgba(180,200,255,.62);
+        font-size: 10px;
+        line-height: 1.1;
+        padding: 6px 3px;
+        transition: background .18s, color .18s;
+      }
+      .nav button.active {
+        color: #fff;
+        background: rgba(242,106,61,.15);
+        box-shadow: none;
+      }
+      .nav button.active .nav-icon {
+        color: #ff956f;
+      }
+      .nav-icon { width: auto; font-size: 18px; line-height: 1; }
+      .content { padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)); }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        height: auto;
+        min-height: 70px;
+        padding: max(10px, env(safe-area-inset-top)) var(--mobile-gutter) 10px;
+      }
+      .topbar h1 { font-size: 20px; }
+      .live-status { flex-shrink: 0; }
+      .page { padding: 20px var(--mobile-gutter) 28px; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+      .stat { min-height: 92px; padding: 13px; border-radius: 15px; }
+      .stat-label { font-size: 9px; line-height: 1.25; }
+      .stat-value { font-size: 25px; margin-top: 10px; }
+      .grid, .team-columns { gap: 16px; }
+      .card { padding: 16px; border-radius: 16px; }
+      .card + .card { margin-top: 16px; }
+      .card-heading { gap: 12px; margin-bottom: 16px; }
+      .card-title { font-size: 16px; }
+      .card-subtitle { line-height: 1.45; }
+      .card-heading .outline, .card-heading .primary { flex: 1 0 100%; }
+      .admin-actions { width: 100%; justify-content: stretch; }
+      .admin-actions > * { flex: 1 1 auto; }
+      .admin-actions .timer { text-align: center; }
+      .station-row { grid-template-columns: minmax(0, 1fr) 66px 52px; gap: 7px; }
+      .station-row > .outline, .station-row > .toggle { grid-column: 3; grid-row: 1; }
+      .station-row > .toggle { justify-self: end; }
+      .station-row > .bar { grid-column: 1 / 3; grid-row: 2; }
+      .station-row > .capacity { grid-column: 3; grid-row: 2; }
+      .station-name { font-size: 12px; }
+      .station-type, .capacity { font-size: 9px; }
+      .challenge-row { align-items: flex-start; padding: 10px; }
+      .challenge-info { padding-top: 2px; }
+      .challenge-row > .tag { margin-left: auto; }
+      .challenge-row > .outline, .challenge-row > .primary,
+      .volunteer-row > .score-entry, .volunteer-row > .status {
+        flex: 1 0 100%;
+        margin-left: 34px;
+      }
+      .volunteer-row > .status { margin-left: 34px; }
+      .score-entry { width: calc(100% - 34px); }
+      .score-input { flex: 1; width: auto; min-height: 44px; font-size: 16px; }
+      .team-hero { padding: 20px; margin-bottom: 16px; }
+      .team-hero h2 { font-size: clamp(29px, 9vw, 35px); overflow-wrap: anywhere; }
+      .team-hero p { font-size: 13px; }
+      .hero-score { margin-top: 20px; }
+      .progress-wrap { padding: 17px; margin-bottom: 16px; }
+      .progress-top { gap: 10px; line-height: 1.35; }
+      .mission { min-height: 0; }
+      .mission h3 { font-size: 28px; overflow-wrap: anywhere; }
+      .mission-prompt { font-size: 16px; line-height: 1.55; overflow-wrap: anywhere; }
+      .question-card { padding: 13px; }
+      .quiz-option { padding: 10px; }
+      .quiz-option input { flex-shrink: 0; }
+      .form-grid { gap: 0; }
+      .form-actions { gap: 8px; }
+      .editor-dialog {
+        width: calc(100% - 24px);
+        max-height: calc(100dvh - 24px);
+        margin: auto;
+      }
+      .toast {
+        right: var(--mobile-gutter);
+        bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom) + 12px);
+        max-width: calc(100vw - (var(--mobile-gutter) * 2));
+      }
+    }
   </style>
 </head>
 <body>
