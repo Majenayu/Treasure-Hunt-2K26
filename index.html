@@ -770,6 +770,10 @@
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
        const waitingForRiddleScan = challenge?.type === 'RIDDLE' && (!team.missionStarted || riddleScanRequired);
+       const riddleQr = waitingForRiddleScan ? await getRiddleQr(challenge) : null;
+       const qrMarkup = riddleQr
+         ? `<div class="riddle-qr"><img src="${riddleQr.dataUrl}" alt="QR code for ${escapeHtml(challenge.name)}"><div><strong>Scan this riddle QR</strong><span>Use the checkpoint QR to unlock pass ${challenge.riddleStep || 1}.</span><span>Fallback code: <code>${escapeHtml(riddleQr.stationCode)}</code></span></div></div>`
+         : '';
       const questionCards = (challenge?.questions || []).map((question, index) => {
         const answerControl = volunteerScored
           ? '<span class="tag">Score recorded by volunteer</span>'
@@ -794,15 +798,17 @@
             : '';
       const timerLabel = challenge?.timeLimit ? `${formatTime(Math.max(0, challenge.timeLimit - team.missionSeconds))} remaining` : 'No timer';
       const locationInfo = challenge?.type === 'RIDDLE'
-         ? `<div class="mission-location">⌁ Riddle path · first riddle opens automatically${riddleScanRequired ? ' · scan the QR for the next riddle' : ''}</div>`
+          ? `<div class="mission-location">⌁ Riddle path · scan the checkpoint QR before pass ${challenge.riddleStep || 1}</div>`
         : `<div class="mission-location">⌖ ${escapeHtml(challenge?.location || '')} · <span class="mono">${escapeHtml(challenge?.stationCode || '')}</span></div>`;
-      const waitingContent = waitingForVolunteer
+       const waitingContent = waitingForRiddleScan
+         ? `<div class="mission-kicker">QR scan required</div><h3>Unlock the riddle.</h3>${qrMarkup}<p class="mission-prompt">Scan the checkpoint QR to unlock pass ${challenge.riddleStep || 1}. If your camera cannot scan it, enter the fallback code.</p><button id="startMission" data-riddle="true" class="primary">Scan / enter QR ↗</button>`
+         : waitingForVolunteer
         ? `<div class="mission-kicker">Location verification required</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Your clue will appear as soon as they verify you.</p>`
          : challenge?.type === 'RIDDLE'
-           ? `<p class="mission-prompt">The first riddle opens automatically. Refresh the page if you are waiting for the first pass.</p>`
+            ? `<p class="mission-prompt">Scan the checkpoint QR to unlock the first riddle pass.</p>`
            : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
        const activeContent = riddleScanRequired
-         ? `<div class="mission-kicker">QR scan required</div><p class="mission-prompt">Scan the partial riddle QR to unlock pass ${challenge.riddleStep}.</p><button id="startMission" data-riddle="true" class="primary">Scan riddle QR ↗</button><p class="card-subtitle" style="margin-top:14px">Enter the code from the QR. No volunteer or physical location is needed.</p>`
+          ? `<div class="mission-kicker">QR scan required</div>${qrMarkup}<p class="mission-prompt">Scan the checkpoint QR to unlock pass ${challenge.riddleStep}.</p><button id="startMission" data-riddle="true" class="primary">Scan / enter QR ↗</button>`
          : volunteerScored
          ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
          : mysteryQuiz
@@ -820,7 +826,7 @@
        document.querySelectorAll('.mission-quiz-answer').forEach((input) => input.addEventListener('change', submitAnswer));
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
         if (team.missionStarted && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
-        else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(3000);
+        else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(1000);
     }
     async function renderOrganizer() {
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
@@ -844,18 +850,18 @@
       }).join('');
       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">${escapeHtml(data.checkpointLabel)} · ${escapeHtml(data.checkpointId)} volunteer console</h2><p class="card-subtitle">Only teams currently assigned to this location appear here. Verify their team to release the clue.</p></div><span class="tag">LOCATION VOLUNTEER</span></div>${data.teams.length ? `<div class="challenge-list">${teamRows}</div>` : '<div class="empty-state"><strong>No teams at this location yet.</strong><span>Teams will appear when they sign in and reach this checkpoint.</span></div>'}</section>`;
       document.querySelectorAll('.verify-team').forEach((button) => button.addEventListener('click', async () => {
-        try { await api('/api/organizer/verify', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team }) }); showToast('Team verified. The clue is now live.'); render(); } catch (error) { showToast(error.message); }
+         button.disabled = true; button.textContent = 'Verifying…';
+         try { await api('/api/organizer/verify', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team }) }); showToast('Team verified. The clue is now live.'); render(); } catch (error) { button.disabled = false; button.textContent = 'Verify team ↗'; showToast(error.message); }
       }));
       document.querySelectorAll('.score-team').forEach((button) => button.addEventListener('click', async () => {
         const input = document.querySelector(`.score-input[data-team="${button.dataset.team}"]`);
         try { await api('/api/organizer/score', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, score: input.value, maxScore: 10 }) }); showToast('Score recorded. Next clue released.'); render(); } catch (error) { showToast(error.message); }
       }));
-       if (data.teams.some((team) => team.currentChallenge?.type === 'CODING') && !data.teams.some((team) => team.currentChallenge && ['PUZZLE', 'LOGIC'].includes(team.currentChallenge.type))) scheduleRender(1000);
-       else if (!data.teams.some((team) => team.currentChallenge && ['PUZZLE', 'LOGIC'].includes(team.currentChallenge.type))) scheduleRender(3000);
+        scheduleRender(1000);
     }
     async function startMission(event) {
       const isRiddle = event?.currentTarget?.dataset?.riddle === 'true';
-      const code = prompt(isRiddle ? 'Enter the code from the partial riddle QR:' : 'Enter the station code from the location:', '');
+       const code = prompt(isRiddle ? 'Scan the riddle QR or enter its fallback code:' : 'Enter the station code from the location:', '');
       if (!code) return;
       try { await api('/api/team/start', { method: 'POST', body: JSON.stringify({ stationCode: code }) }); showToast('Station unlocked. Your mission is live.'); render(); } catch (error) { showToast(error.message); }
     }
