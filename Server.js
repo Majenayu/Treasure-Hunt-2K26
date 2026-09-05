@@ -679,19 +679,23 @@ function publicTeam(team) {
   const challenge = getTeamChallenge(team);
   const safeChallenge = publicChallenge(challenge);
   const missionStarted = Boolean(safeChallenge && team.currentChallenge === challenge.id && team.startedAt);
+  const assignedSet = challenge && ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)
+    ? assignQuestionSet(team, challenge)
+    : null;
   if (safeChallenge?.type === 'RIDDLE') {
     safeChallenge.riddleStep = (team.riddleProgress?.[challenge.id] || 0) + 1;
     safeChallenge.riddleTotal = challenge.questionSets[0]?.length || 3;
     safeChallenge.riddleScanRequired = !team.riddleScanUnlocked?.[challenge.id];
   }
+  if (safeChallenge?.type === 'MYSTERY') {
+    safeChallenge.quizRound = challenge.number < 9 ? 1 : 2;
+    safeChallenge.quizTotal = 20;
+  } else if (assignedSet !== null) {
+    safeChallenge.questionSet = assignedSet + 1;
+  }
   if (missionStarted) {
-    const assignment = team.questionAssignments[challenge.id] ?? 0;
     if (challenge.type === 'MYSTERY') {
-      safeChallenge.quizRound = challenge.number < 9 ? 1 : 2;
-      safeChallenge.quizTotal = 20;
       safeChallenge.quizQuestion = (team.mysteryProgress?.[challenge.id] || 0) + 1;
-    } else {
-      safeChallenge.questionSet = assignment + 1;
     }
     safeChallenge.questions = ['LOGIC', 'PUZZLE'].includes(challenge.type)
       ? []

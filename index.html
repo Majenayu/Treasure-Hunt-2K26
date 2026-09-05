@@ -562,7 +562,7 @@
         let syncing = false;
         const update = async () => {
          const element = $('#missionTimer');
-         if (!element) return;
+          if (!element) { clearInterval(state.timer); state.timer = null; return; }
           if (!syncing) {
             syncing = true;
             try {
@@ -581,8 +581,8 @@
             }
          }
           if (!$('#missionTimer')) return;
-          element.textContent = currentEvent.status === 'LIVE' ? `${formatTime(remaining)} remaining` : 'PAUSED';
-          if (remaining <= 0 && currentEvent.status === 'LIVE' && !state.expiringMission) {
+           element.textContent = `${formatTime(remaining)} remaining`;
+           if (remaining <= 0 && currentEvent?.status !== 'PAUSED' && !state.expiringMission) {
            state.expiringMission = true;
            api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers: [] }) })
              .then(() => showToast('Time expired. 20% points awarded.'))
@@ -635,6 +635,8 @@
     }
     async function render() {
       clearScheduledRefresh();
+       clearInterval(state.timer);
+       state.timer = null;
       renderNav();
        $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Teams & progress', adminProgress: 'Teams & progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
       try {
@@ -789,8 +791,8 @@
                : `Question ${index + 1}`;
          return `<div class="question-card"><div class="question-number">${questionLabel}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
       }).join('');
-       const roundLabel = challenge?.quizRound
-         ? `QUIZ SET ${challenge.quizRound} · QUESTION ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}`
+        const roundLabel = challenge?.quizRound
+          ? `QUIZ SET ${challenge.quizRound}${team.missionStarted ? ` · QUESTION ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}` : ''}`
         : challenge?.riddleStep
           ? `PASS ${challenge.riddleStep} / ${challenge.riddleTotal}`
           : challenge?.questionSet
@@ -800,10 +802,14 @@
       const locationInfo = challenge?.type === 'RIDDLE'
           ? `<div class="mission-location">⌁ Riddle path · scan the checkpoint QR before pass ${challenge.riddleStep || 1}</div>`
         : `<div class="mission-location">⌖ ${escapeHtml(challenge?.location || '')} · <span class="mono">${escapeHtml(challenge?.stationCode || '')}</span></div>`;
+       const assignedSet = challenge?.type === 'MYSTERY'
+         ? challenge.quizRound
+         : challenge?.questionSet;
+       const assignedSetTotal = challenge?.type === 'CODING' ? 10 : challenge?.type === 'MYSTERY' ? 20 : 3;
        const waitingContent = waitingForRiddleScan
          ? `<div class="mission-kicker">QR scan required</div><h3>Unlock the riddle.</h3>${qrMarkup}<p class="mission-prompt">Scan the checkpoint QR to unlock pass ${challenge.riddleStep || 1}. If your camera cannot scan it, enter the fallback code.</p><button id="startMission" data-riddle="true" class="primary">Scan / enter QR ↗</button>`
          : waitingForVolunteer
-        ? `<div class="mission-kicker">Location verification required</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Your clue will appear as soon as they verify you.</p>`
+         ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
          : challenge?.type === 'RIDDLE'
             ? `<p class="mission-prompt">Scan the checkpoint QR to unlock the first riddle pass.</p>`
            : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
