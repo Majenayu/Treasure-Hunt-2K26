@@ -200,6 +200,13 @@
     .rank-row strong { flex: 1; font-size: 13px; }
     .rank-row span { color: var(--orange-dark); font: 500 11px 'DM Mono'; }
     .mobile-only { display: none; }
+    .mobile-logout { display: none; border: 1px solid rgba(242,106,61,.2); background: rgba(242,106,61,.08); color: #ff956f; border-radius: 10px; padding: 7px 9px; font: 500 12px 'DM Mono'; }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; }
+    .riddle-qr { display: flex; align-items: center; gap: 14px; max-width: 420px; margin: 16px 0 8px; padding: 12px; border: 1px solid rgba(242,106,61,.22); border-radius: 14px; background: rgba(242,106,61,.06); }
+    .riddle-qr img { width: 132px; height: 132px; padding: 7px; background: #fff; border-radius: 8px; flex: 0 0 auto; }
+    .riddle-qr strong { display: block; color: #eaf0ff; font: 700 14px 'Space Grotesk'; margin-bottom: 6px; }
+    .riddle-qr span { display: block; color: rgba(180,200,255,.68); font-size: 12px; line-height: 1.5; }
+    .riddle-qr code { color: #ff956f; font: 500 12px 'DM Mono'; }
     .toast { position: fixed; right: 24px; bottom: 24px; color: white; background: var(--ink); border-left: 4px solid var(--orange); border-radius: 10px; padding: 13px 16px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; }
      .admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
      .admin-actions .timer { white-space: nowrap; }
@@ -225,9 +232,12 @@
       .nav-icon { font-size: 17px; }
       .content { padding-bottom: 64px; }
       .topbar { padding: 0 17px; height: 70px; }
+      .topbar > div:first-child { min-width: 0; }
+      .topbar-actions { flex-shrink: 0; }
       .topbar h1 { font-size: 21px; }
       .page-kicker { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 63vw; }
       .live-status { padding: 7px 9px; font-size: 9px; white-space: nowrap; }
+      .mobile-logout { display: grid; place-items: center; min-width: 40px; min-height: 40px; padding: 0; }
       .page { padding: 25px 17px 35px; }
       .stats { gap: 9px; }
       .stat { padding: 16px; min-height: 100px; }
@@ -251,6 +261,9 @@
       .form-actions { flex-direction: column; }
       .form-actions button { width: 100%; }
       .editor-dialog form { padding: 18px; }
+      .riddle-qr { align-items: flex-start; gap: 10px; }
+      .riddle-qr img { width: 112px; height: 112px; }
+      .riddle-qr strong { font-size: 13px; }
     }
     /* Original CodeHunt mission-control skin, recolored for the orange event. */
     body { background: #03050f; color: #eaf0ff; }
@@ -500,7 +513,7 @@
     <main class="content">
       <header class="topbar">
         <div><div class="page-kicker">CodeHunt / The Orange Circuit</div><h1 id="pageTitle">Mission control</h1></div>
-        <div id="eventStatus" class="live-status"><span class="dot"></span> CIRCUIT LIVE</div>
+        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> CIRCUIT LIVE</div><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
       </header>
       <div id="view" class="page"></div>
     </main>
@@ -510,13 +523,18 @@
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-     const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false };
+     const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {} };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Something went wrong.');
       return data;
     };
+     const getRiddleQr = async (challenge) => {
+       if (!challenge?.id) return null;
+       if (!state.qrCache[challenge.id]) state.qrCache[challenge.id] = api(`/api/riddle-qr/${encodeURIComponent(challenge.id)}`);
+       return state.qrCache[challenge.id];
+     };
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
     const formatTime = (seconds) => {
       const value = Math.max(0, Number(seconds) || 0);
@@ -537,20 +555,34 @@
        update();
      }
      function startMissionTimer(team, challenge, event) {
-       clearTimeout(state.timer);
+        clearInterval(state.timer);
         if (!team.missionStarted || !challenge?.timeLimit) return;
        let remaining = Math.max(0, challenge.timeLimit - team.missionSeconds);
-       let lastTick = Date.now();
-       const update = () => {
+        let currentEvent = event;
+        let syncing = false;
+        const update = async () => {
          const element = $('#missionTimer');
          if (!element) return;
-         const now = Date.now();
-         if (event.status === 'LIVE') {
-           remaining = Math.max(0, remaining - Math.floor((now - lastTick) / 1000));
+          if (!syncing) {
+            syncing = true;
+            try {
+              const live = await api('/api/team/state');
+              if (!live.team.missionStarted) {
+                clearInterval(state.timer);
+                render();
+                return;
+              }
+              remaining = Math.max(0, challenge.timeLimit - live.team.missionSeconds);
+              currentEvent = live.event;
+            } catch (_) {
+              // Keep the last server-confirmed value visible during a brief network gap.
+            } finally {
+              syncing = false;
+            }
          }
-         lastTick = now;
-         element.textContent = event.status === 'LIVE' ? `${formatTime(remaining)} remaining` : 'PAUSED';
-         if (remaining <= 0 && event.status === 'LIVE' && !state.expiringMission) {
+          if (!$('#missionTimer')) return;
+          element.textContent = currentEvent.status === 'LIVE' ? `${formatTime(remaining)} remaining` : 'PAUSED';
+          if (remaining <= 0 && currentEvent.status === 'LIVE' && !state.expiringMission) {
            state.expiringMission = true;
            api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers: [] }) })
              .then(() => showToast('Time expired. 20% points awarded.'))
@@ -558,9 +590,9 @@
              .finally(() => { state.expiringMission = false; render(); });
            return;
          }
-         state.timer = setTimeout(update, 1000);
        };
-       update();
+         state.timer = setInterval(update, 1000);
+        update();
      }
     const showToast = (message) => { $('#toast').textContent = message; $('#toast').classList.remove('hidden'); setTimeout(() => $('#toast').classList.add('hidden'), 3500); };
     const setLoginError = (message) => { $('#loginError').textContent = message; $('#loginError').classList.toggle('hidden', !message); };
@@ -581,7 +613,9 @@
         state.token = data.token; state.user = data.user; state.role = data.user.role; localStorage.setItem('codehunt_token', state.token); showApp();
       } catch (error) { setLoginError(error.message); }
     });
-    $('#logoutBtn').addEventListener('click', async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); });
+     const logout = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); };
+     $('#logoutBtn').addEventListener('click', logout);
+     $('#mobileLogoutBtn').addEventListener('click', logout);
      const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
     const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
@@ -735,6 +769,7 @@
       const volunteerScored = challenge && ['LOGIC', 'PUZZLE'].includes(challenge.type);
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
+       const waitingForRiddleScan = challenge?.type === 'RIDDLE' && (!team.missionStarted || riddleScanRequired);
       const questionCards = (challenge?.questions || []).map((question, index) => {
         const answerControl = volunteerScored
           ? '<span class="tag">Score recorded by volunteer</span>'

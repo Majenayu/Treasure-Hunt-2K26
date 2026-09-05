@@ -2,6 +2,7 @@ const express = require('express');
 const compression = require('compression');
 const crypto = require('crypto');
 const path = require('path');
+const QRCode = require('qrcode');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -664,22 +665,25 @@ function secondsOnMission(team) {
   return Math.max(0, Math.floor(wallSeconds - pausedSeconds));
 }
 
-function startRiddleIfNeeded(team) {
-  if (!team || state.status !== 'LIVE') return;
-  const challenge = getTeamChallenge(team);
-  if (challenge?.type !== 'RIDDLE' || team.currentChallenge === challenge.id) return;
+function unlockRiddle(team, challenge) {
+  if (!team || !challenge || challenge.type !== 'RIDDLE' || state.status !== 'LIVE') return;
   assignQuestionSet(team, challenge);
   team.currentChallenge = challenge.id;
   team.startedAt = new Date().toISOString();
   team.startedPauseSeconds = state.totalPausedSeconds;
   team.riddleScanUnlocked[challenge.id] = true;
-  writeAudit('RIDDLE STARTED', `${team.id} opened ${challenge.name}`, team.id);
+  writeAudit('RIDDLE SCANNED', `${team.id} unlocked ${challenge.name} pass ${(team.riddleProgress?.[challenge.id] || 0) + 1}`, team.id);
 }
 
 function publicTeam(team) {
   const challenge = getTeamChallenge(team);
   const safeChallenge = publicChallenge(challenge);
   const missionStarted = Boolean(safeChallenge && team.currentChallenge === challenge.id && team.startedAt);
+  if (safeChallenge?.type === 'RIDDLE') {
+    safeChallenge.riddleStep = (team.riddleProgress?.[challenge.id] || 0) + 1;
+    safeChallenge.riddleTotal = challenge.questionSets[0]?.length || 3;
+    safeChallenge.riddleScanRequired = !team.riddleScanUnlocked?.[challenge.id];
+  }
   if (missionStarted) {
     const assignment = team.questionAssignments[challenge.id] ?? 0;
     if (challenge.type === 'MYSTERY') {
@@ -688,11 +692,6 @@ function publicTeam(team) {
       safeChallenge.quizQuestion = (team.mysteryProgress?.[challenge.id] || 0) + 1;
     } else {
       safeChallenge.questionSet = assignment + 1;
-    }
-    if (challenge.type === 'RIDDLE') {
-      safeChallenge.riddleStep = (team.riddleProgress?.[challenge.id] || 0) + 1;
-      safeChallenge.riddleTotal = challenge.questionSets[0]?.length || 3;
-      safeChallenge.riddleScanRequired = !team.riddleScanUnlocked?.[challenge.id];
     }
     safeChallenge.questions = ['LOGIC', 'PUZZLE'].includes(challenge.type)
       ? []
@@ -834,7 +833,6 @@ app.get('/api/me', requireAuth, (req, res) => res.json(req.user));
 
 app.get('/api/session', requireAuth, (req, res) => {
   const team = req.user.role === 'team' ? teams.get(req.user.teamId) : null;
-  if (team) startRiddleIfNeeded(team);
   res.json({ user: req.user, team: team ? publicTeam(team) : null });
 });
 
@@ -1095,8 +1093,23 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
 app.get('/api/team/state', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
   const team = teams.get(req.user.teamId);
-  startRiddleIfNeeded(team);
   res.json({ team: publicTeam(team), leaderboard: leaderboard().slice(0, 5), event: state });
+});
+
+app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
+  const challenge = challenges.get(req.params.id);
+  if (!challenge || challenge.type !== 'RIDDLE') return res.status(404).json({ error: 'Riddle QR not found.' });
+  try {
+    const dataUrl = await QRCode.toDataURL(challenge.stationCode, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 220,
+    });
+    res.json({ stationCode: challenge.stationCode, dataUrl });
+  } catch (_) {
+    res.status(500).json({ error: 'Unable to prepare the riddle QR.' });
+  }
 });
 
 app.post('/api/team/start', requireAuth, (req, res) => {
@@ -1107,13 +1120,11 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
   if (challenge.disabled) return res.status(409).json({ error: 'This station is temporarily offline.' });
   if (challenge.type === 'RIDDLE') {
-    if (!team.currentChallenge) startRiddleIfNeeded(team);
     if (team.riddleScanUnlocked?.[challenge.id]) return res.json({ ok: true, team: publicTeam(team) });
     if ((req.body.stationCode || '').trim().toUpperCase() !== challenge.stationCode) {
-      return res.status(400).json({ error: 'Wrong scan. Scan the partial riddle QR code.' });
+      return res.status(400).json({ error: 'Wrong QR code. Scan the riddle QR at this checkpoint.' });
     }
-    team.riddleScanUnlocked[challenge.id] = true;
-    writeAudit('RIDDLE SCANNED', `${team.id} unlocked riddle pass ${(team.riddleProgress?.[challenge.id] || 0) + 1}`, team.id);
+    unlockRiddle(team, challenge);
     return res.json({ ok: true, team: publicTeam(team) });
   }
   if (['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)) {
