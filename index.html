@@ -519,10 +519,12 @@
       const questions = data.rounds;
       const plan = data.plan;
        const planCard = (label, detail, mode) => {
-         const updatedMode = label === 'Coding questions' ? '10 serials · 1 at a time'
-           : label === 'Puzzle / Logic' ? '10 assigned sets · volunteer score'
+         const updatedLabel = label === 'Puzzle / Logic' ? 'Logic + Puzzle sets' : label;
+         const updatedDetail = label === 'Puzzle / Logic' ? '2 + 2 · 6 + 6' : detail;
+         const updatedMode = label === 'Coding questions' ? '10-question pool · 1 serial per team'
+           : label === 'Puzzle / Logic' ? 'Volunteer score · no team questions'
              : label === 'Mystery quiz' ? 'Set 1 + Set 2 · 1 at a time' : mode;
-         return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${detail}</div><div class="card-subtitle">${updatedMode}</div></div>`;
+         return `<div class="stat"><div class="stat-label">${updatedLabel}</div><div class="stat-value">${updatedDetail}</div><div class="card-subtitle">${updatedMode}</div></div>`;
        };
        const previewQuestion = (question, roundId, setIndex, questionIndex) => `<li><div class="question-item"><span>${escapeHtml(question.prompt)}${question.options ? `<div class="card-subtitle">Options: ${question.options.map(escapeHtml).join(' · ')}</div>` : ''}</span><button class="outline edit-question" data-question="${roundId}" data-set="${setIndex}" data-index="${questionIndex}">Edit</button></div></li>`;
        const previewSets = (question) => question.sets.map((set, index) => `<details class="question-set"><summary>${question.type.toUpperCase() === 'MYSTERY' ? `Quiz set ${index + 1} · ${set.questions.length} questions` : `Set ${set.setNumber} · ${set.questions.length} question${set.questions.length === 1 ? '' : 's'}`}</summary><ol>${set.questions.map((item, questionIndex) => previewQuestion(item, question._id, index, questionIndex)).join('')}</ol></details>`).join('');

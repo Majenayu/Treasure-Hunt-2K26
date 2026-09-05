@@ -178,6 +178,8 @@ const challengeSeed = [
 ];
 
 const QUESTION_SET_COUNT = 10;
+const LOGIC_SET_COUNT = 2;
+const PUZZLE_SET_COUNT = 6;
 const CODING_QUESTIONS = [
   {
     prompt: 'Q1 — The Missing Identification Number\nInput: 1 2 3 4 5 7 8 9 10\nOutput: 6\nWrite the program described and enter the output for the supplied input.',
@@ -417,18 +419,19 @@ function makeQuestion(type, seed, index) {
 
 function makeQuestionSets(challenge) {
   if (challenge.type === 'CODING') {
-    return CODING_QUESTIONS.map((question) => [question]);
+    return [CODING_QUESTIONS];
   }
   if (challenge.type === 'RIDDLE') {
     const start = challenge.number < 9 ? 0 : 3;
     return [RIDDLE_QUESTIONS.slice(start, start + 3)];
   }
   if (challenge.type === 'MYSTERY') {
-    return MYSTERY_QUIZ_SETS;
+    return [challenge.number < 9 ? MYSTERY_QUIZ_SETS[0] : MYSTERY_QUIZ_SETS[1]];
   }
   if (challenge.type === 'LOGIC' || challenge.type === 'PUZZLE') {
     const bank = challenge.type === 'LOGIC' ? LOGIC_QUESTIONS : PUZZLE_QUESTIONS;
-    return Array.from({ length: QUESTION_SET_COUNT }, (_, setIndex) => (
+    const setCount = challenge.type === 'LOGIC' ? LOGIC_SET_COUNT : PUZZLE_SET_COUNT;
+    return Array.from({ length: setCount }, (_, setIndex) => (
       Array.from({ length: 3 }, (_, questionIndex) => bank[(setIndex * 3 + questionIndex) % bank.length])
     ));
   }
@@ -604,9 +607,14 @@ function getTeamChallenge(team) {
 function assignedQuestions(team, challenge) {
   if (!challenge) return [];
   if (challenge.type === 'MYSTERY') {
-    const quizSet = challenge.number < 9 ? MYSTERY_QUIZ_SETS[0] : MYSTERY_QUIZ_SETS[1];
+    const quizSet = challenge.questionSets[0] || [];
     const progress = team.mysteryProgress?.[challenge.id] || 0;
     return quizSet.slice(progress, progress + 1);
+  }
+  if (challenge.type === 'CODING') {
+    const questionIndex = team.questionAssignments[challenge.id] ?? 0;
+    const question = challenge.questionSets[0]?.[questionIndex];
+    return question ? [question] : [];
   }
   const assignment = team.questionAssignments[challenge.id] ?? 0;
   if (challenge.type === 'RIDDLE') {
@@ -625,7 +633,10 @@ function assignQuestionSet(team, challenge) {
     team.questionAssignments[challenge.id] = 0;
     return 0;
   }
-  const usage = Array.from({ length: challenge.questionSets.length }, () => 0);
+  const assignmentCount = challenge.type === 'CODING'
+    ? challenge.questionSets[0]?.length || 1
+    : challenge.questionSets.length;
+  const usage = Array.from({ length: assignmentCount }, () => 0);
   for (const otherTeam of teams.values()) {
     const assigned = otherTeam.questionAssignments?.[challenge.id];
     if (assigned !== undefined && assigned < usage.length) usage[assigned] += 1;
@@ -857,11 +868,11 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     difficulty: challenge.type === 'CODING' ? 'hard' : 'medium',
     name: challenge.name,
     disabled: challenges.get(challenge.id).disabled,
-    setCount: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? 1 : challenge.type === 'MYSTERY' ? 2 : QUESTION_SET_COUNT,
-    questionsPerSet: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : challenge.type === 'CODING' ? 1 : 3,
-    totalQuestions: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : (challenge.type === 'CODING' ? 10 : QUESTION_SET_COUNT * 3),
-    eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : QUESTION_SET_COUNT * 3,
-    eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'uploaded Set 1 or Set 2; sequential per team' : 'per round',
+    setCount: challenge.type === 'CODING' ? 1 : challenge.type === 'RIDDLE' ? 1 : challenge.type === 'MYSTERY' ? 1 : challenge.type === 'LOGIC' ? LOGIC_SET_COUNT : challenge.type === 'PUZZLE' ? PUZZLE_SET_COUNT : QUESTION_SET_COUNT,
+    questionsPerSet: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : challenge.type === 'CODING' ? 10 : 3,
+    totalQuestions: challenge.type === 'MYSTERY' ? 20 : challenge.type === 'RIDDLE' ? 3 : challenge.type === 'CODING' ? 10 : (challenge.type === 'LOGIC' ? LOGIC_SET_COUNT : challenge.type === 'PUZZLE' ? PUZZLE_SET_COUNT : QUESTION_SET_COUNT) * 3,
+    eventPoolQuestions: challenge.type === 'CODING' ? 10 : challenge.type === 'RIDDLE' ? RIDDLE_QUESTIONS.length : challenge.type === 'MYSTERY' ? MYSTERY_POOL.length : (challenge.type === 'LOGIC' ? LOGIC_SET_COUNT : challenge.type === 'PUZZLE' ? PUZZLE_SET_COUNT : QUESTION_SET_COUNT) * 3,
+    eventPoolScope: challenge.type === 'RIDDLE' ? 'shared across both rounds' : challenge.type === 'MYSTERY' ? 'uploaded Set 1 or Set 2; sequential per team' : challenge.type === 'CODING' ? 'shared 10-question pool; one serial per team' : 'per checkpoint',
     sets: stored.questionSets.map((set, setIndex) => ({
       setNumber: setIndex + 1,
       questions: set.map(publicQuestion),
@@ -873,8 +884,8 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     plan: {
       coding: { total: 10, roundOne: 10, roundTwo: 10, perTeam: 1, mode: 'shared pool · one serial per team' },
       riddles: { total: 6, roundOne: 3, roundTwo: 3, perTeam: 3, mode: 'fixed order · no mixing' },
-      puzzles: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
-      logic: { total: 60, setsPerRound: 10, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
+      puzzles: { total: 36, setsPerRound: 6, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
+      logic: { total: 12, setsPerRound: 2, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
       mystery: { total: 40, roundOne: 20, roundTwo: 20, perTeam: 20, mode: 'uploaded set · one at a time' },
     },
   });
