@@ -679,7 +679,8 @@ function startRiddleIfNeeded(team) {
 function publicTeam(team) {
   const challenge = getTeamChallenge(team);
   const safeChallenge = publicChallenge(challenge);
-  if (safeChallenge && team.currentChallenge === challenge.id) {
+  const missionStarted = Boolean(safeChallenge && team.currentChallenge === challenge.id && team.startedAt);
+  if (missionStarted) {
     const assignment = team.questionAssignments[challenge.id] ?? 0;
     if (challenge.type === 'MYSTERY') {
       safeChallenge.quizRound = challenge.number < 9 ? 1 : 2;
@@ -708,6 +709,7 @@ function publicTeam(team) {
     active: team.active,
     completedAt: team.completedAt,
     currentChallenge: safeChallenge,
+    missionStarted,
     missionStartedAt: team.startedAt,
     missionSeconds: secondsOnMission(team),
   };

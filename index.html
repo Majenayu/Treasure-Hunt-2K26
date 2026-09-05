@@ -538,7 +538,7 @@
      }
      function startMissionTimer(team, challenge, event) {
        clearTimeout(state.timer);
-       if (!team.currentChallenge || !challenge?.timeLimit) return;
+        if (!team.missionStarted || !challenge?.timeLimit) return;
        let remaining = Math.max(0, challenge.timeLimit - team.missionSeconds);
        let lastTick = Date.now();
        const update = () => {
@@ -731,7 +731,7 @@
       const complete = team.completed >= totalMissions;
       const volunteerTypes = ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'];
       const locationRequired = challenge && volunteerTypes.includes(challenge.type);
-      const waitingForVolunteer = locationRequired && !team.currentChallenge;
+       const waitingForVolunteer = locationRequired && !team.missionStarted;
       const volunteerScored = challenge && ['LOGIC', 'PUZZLE'].includes(challenge.type);
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
@@ -775,7 +775,7 @@
         : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : challenge.type === 'RIDDLE' ? 'Submit pass ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
       const missionContent = complete
         ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ${totalMissions} stations. Stay sharp — the final standings are still moving.</p><button class="primary" data-view="teamboard">View leaderboard ↗</button>`
-         : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.currentChallenge ? activeContent : waitingContent}`;
+         : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.missionStarted ? activeContent : waitingContent}`;
       const progressPercent = Math.min(100, Math.round((team.completed / totalMissions) * 100));
        const participantScore = mysteryQuiz ? '<div class="hero-score"><span>QUIZ IN PROGRESS</span></div>' : `<div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div>`;
        const participantPoints = mysteryQuiz ? '<div class="rank-row"><span class="rank-number">01</span><strong>Quiz status</strong><span>IN PROGRESS</span></div>' : `<div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div>`;
@@ -784,8 +784,8 @@
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
        document.querySelectorAll('.mission-quiz-answer').forEach((input) => input.addEventListener('change', submitAnswer));
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
-       if (team.currentChallenge && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
-       else if (!team.currentChallenge || riddleScanRequired || volunteerScored) scheduleRender(3000);
+        if (team.missionStarted && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
+        else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(3000);
     }
     async function renderOrganizer() {
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
@@ -793,7 +793,7 @@
       $('#eventStatus').innerHTML = `<span class="dot"></span> LOCATION ${escapeHtml(data.checkpointId)} · ${escapeHtml(data.checkpointLabel)}`;
       const teamRows = data.teams.map((team) => {
         const challenge = team.currentChallenge;
-        const verified = Boolean(challenge);
+         const verified = Boolean(team.missionStarted);
         const supervisedScore = challenge && ['PUZZLE', 'LOGIC'].includes(challenge.type);
         const status = verified
           ? challenge.type === 'CODING'
