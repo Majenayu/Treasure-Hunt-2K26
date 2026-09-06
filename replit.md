@@ -12,8 +12,8 @@ It listens on the `PORT` environment variable and defaults to port `5000` for Re
 
 ## Access
 
-- Admin login: username `majen`, password `majen`
-- Team login: any team code in the format `TEAM-...` (the team password is optional in the UI; `hunt` is accepted). Teams are created when they first sign in, so the event is not limited to a fixed number of teams.
+- Admin and volunteer access details are provided privately to event staff.
+- Team login: enter a team code in the format `TEAM-...`, a unique team name, and a required team password. The same three values can be used on multiple phones to open the same team account. A team name cannot be registered twice.
 
 ## Current storage model
 

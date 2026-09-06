@@ -10,7 +10,6 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 const ADMIN_USERNAME = 'majen';
 const ADMIN_PASSWORD = 'majen';
-const TEAM_PASSWORD = 'hunt';
 
 const challengeSeed = [
   {
@@ -476,7 +475,35 @@ let appStateCollection = null;
 let persistenceWarning = null;
 let persistenceChain = Promise.resolve();
 
-function createTeam(teamId) {
+function normalizeTeamName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function teamNameKey(value) {
+  return normalizeTeamName(value).toLocaleLowerCase();
+}
+
+function hashTeamPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyTeamPassword(password, storedHash) {
+  if (typeof storedHash !== 'string' || !storedHash.startsWith('scrypt$')) return false;
+  const [, salt, expectedHex] = storedHash.split('$');
+  if (!salt || !expectedHex || !/^[a-f0-9]+$/i.test(expectedHex)) return false;
+  const actual = crypto.scryptSync(password, salt, expectedHex.length / 2);
+  const expected = Buffer.from(expectedHex, 'hex');
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function findTeamByName(name, excludeId = null) {
+  const key = teamNameKey(name);
+  return [...teams.values()].find((team) => team.id !== excludeId && teamNameKey(team.name) === key);
+}
+
+function createTeam(teamId, teamName, password) {
   const teamNumber = teams.size + 1;
   // Rotating the route distributes starting stations while preserving the
   // separation between the two coding labs.
@@ -484,7 +511,8 @@ function createTeam(teamId) {
   const route = baseRoute.slice(offset).concat(baseRoute.slice(0, offset));
   const team = {
     id: teamId,
-    name: `Team ${teamId.replace(/^TEAM[-_]?/i, '') || teamId}`,
+    name: normalizeTeamName(teamName),
+    passwordHash: hashTeamPassword(password),
     route,
     currentIndex: 0,
     score: 0,
@@ -903,7 +931,7 @@ function overview() {
 }
 
 app.post('/api/login', (req, res) => {
-  const { role = 'team', username = '', password = '' } = req.body || {};
+  const { role = 'team', username = '', password = '', teamName: submittedTeamName = '' } = req.body || {};
   if (role === 'admin') {
     if (username.trim().toLowerCase() !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
       return res.status(401).json({ error: 'That admin credential is not recognised.' });
@@ -940,10 +968,35 @@ app.post('/api/login', (req, res) => {
   if (!/^TEAM[-_][A-Z0-9_-]{1,48}$/.test(teamId)) {
     return res.status(400).json({ error: 'Use a team code such as TEAM-01.' });
   }
-  if (password && password !== TEAM_PASSWORD) {
-    return res.status(401).json({ error: 'That team password is not recognised.' });
+  const teamName = normalizeTeamName(submittedTeamName);
+  if (!teamName) {
+    return res.status(400).json({ error: 'Enter your registered team name.' });
   }
-  const team = teams.get(teamId) || createTeam(teamId);
+  if (teamName.length < 2 || teamName.length > 48) {
+    return res.status(400).json({ error: 'Team name must be between 2 and 48 characters.' });
+  }
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ error: 'A team password is required.' });
+  }
+  if (password.length < 4 || password.length > 128) {
+    return res.status(400).json({ error: 'Team password must be between 4 and 128 characters.' });
+  }
+  let team = teams.get(teamId);
+  if (!team) {
+    if (findTeamByName(teamName)) {
+      return res.status(409).json({ error: 'That team name is already registered. Choose a different name.' });
+    }
+    team = createTeam(teamId, teamName, password);
+  } else {
+    if (teamNameKey(team.name) !== teamNameKey(teamName)) {
+      return res.status(401).json({ error: 'That team name is not recognised for this team code.' });
+    }
+    if (!team.passwordHash) {
+      team.passwordHash = hashTeamPassword(password);
+    } else if (!verifyTeamPassword(password, team.passwordHash)) {
+      return res.status(401).json({ error: 'That team password is not recognised.' });
+    }
+  }
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { role: 'team', teamId });
   team.active = true;
@@ -1481,7 +1534,6 @@ async function startServer() {
   await connectDatabase();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
-    console.log('Demo admin login: majen / majen');
   });
 }
 

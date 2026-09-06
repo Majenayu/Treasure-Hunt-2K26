@@ -691,13 +691,17 @@
             <label id="usernameLabel" for="username">Admin username</label>
             <input id="username" autocomplete="username" placeholder="Enter username" required>
           </div>
+          <div id="teamNameField" class="field hidden">
+            <label for="teamName">Team name</label>
+            <input id="teamName" autocomplete="organization" placeholder="Enter your unique team name">
+          </div>
           <div class="field">
             <label for="password">Password <span id="passwordOptional"></span></label>
-            <input id="password" type="password" autocomplete="current-password" placeholder="Enter password">
+            <input id="password" type="password" autocomplete="current-password" placeholder="Enter password" required>
           </div>
           <button id="loginSubmit" class="primary wide" type="submit">Enter mission control <span aria-hidden="true">↗</span></button>
         </form>
-        <p id="loginNote" class="login-note">Demo admin: <strong>majen / majen</strong></p>
+        <p id="loginNote" class="login-note">Sign in with your assigned access details.</p>
         <div class="login-links">
           <a href="/">Participant link</a>
           <a href="/admin">Admin login</a>
@@ -1021,10 +1025,16 @@
       document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.role === role));
        $('#usernameLabel').textContent = role === 'admin' ? 'Admin username' : role === 'organizer' ? 'Volunteer username' : 'Team code';
        $('#username').placeholder = role === 'admin' ? 'e.g. majen' : role === 'organizer' ? 'e.g. coding1' : 'e.g. TEAM-01';
-      $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Optional team password';
-      $('#passwordOptional').textContent = role === 'team' ? '(optional)' : '';
+      $('#teamNameField').classList.toggle('hidden', role !== 'team');
+      $('#teamName').required = role === 'team';
+      $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Create or enter team password';
+      $('#passwordOptional').textContent = '';
        $('#loginSubmit').firstChild.textContent = role === 'admin' ? 'Enter admin control ' : role === 'organizer' ? 'Enter volunteer console ' : 'Enter the hunt ';
-       $('#loginNote').innerHTML = role === 'admin' ? 'Demo admin: <strong>majen / majen</strong>' : role === 'organizer' ? 'Demo volunteer: <strong>coding1 / events</strong>' : 'Try a demo team code: <strong>TEAM-01</strong>';
+       $('#loginNote').textContent = role === 'admin'
+         ? 'Use the organizer access details provided to you.'
+         : role === 'organizer'
+           ? 'Use the checkpoint access details provided to you.'
+           : 'Use the same team code, team name, and password on every phone.';
     };
      const configureLoginPage = () => {
        const pageCopy = {
@@ -1043,7 +1053,7 @@
       event.preventDefault(); setLoginError('');
       const role = document.querySelector('.tab.active').dataset.role;
       try {
-        const data = await api('/api/login', { method: 'POST', body: JSON.stringify({ role, username: $('#username').value, password: $('#password').value }) });
+        const data = await api('/api/login', { method: 'POST', body: JSON.stringify({ role, username: $('#username').value, teamName: $('#teamName').value, password: $('#password').value }) });
         state.token = data.token; state.user = data.user; state.role = data.user.role; localStorage.setItem('codehunt_token', state.token); showApp();
       } catch (error) { setLoginError(error.message); }
     });
