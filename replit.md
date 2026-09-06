@@ -19,6 +19,20 @@ It listens on the `PORT` environment variable and defaults to port `5000` for Re
 
 The app uses MongoDB for persistent event state. Set the `MONGODB_URI` secret to the MongoDB connection string and optionally set `MONGODB_DB` to choose the database; it defaults to `techhunt`. Teams, sessions, challenge progress, and admin activity are persisted in the `app_state` collection.
 
+The server also stores login sessions in the `sessions` collection, so a session remains valid when a user moves between server instances. Event-state writes use a short MongoDB lock and every API request refreshes the latest snapshot before serving it. This keeps multiple app instances from overwriting each other's team progress.
+
+## Running three Render services
+
+For `codehuntv2`, `codehuntv3`, and any additional Render service:
+
+1. Use the same repository and the `npm start` start command.
+2. Set the same `MONGODB_URI` secret on every service.
+3. Set the same `MONGODB_DB` value on every service (for example, `techhunt`).
+4. Keep the services pointed at the same MongoDB cluster and database. Do not use separate databases if the records must be shared.
+5. Set the same `SESSION_SECRET` on every service if other application features use it, and never commit any secret to the repository.
+
+The optional `MONGODB_MAX_POOL_SIZE` setting defaults to 40 connections per service. With three services, size the MongoDB cluster for the combined pool capacity and expected traffic. The `/api/health` endpoint reports whether the app connected to MongoDB.
+
 ## Main flows
 
 - Admin: start, pause, resume, end, and reset controls with an event timer; live station pulse, team registry, team reset, station enable/disable, and leaderboard. Ending the event locks the circuit and publishes final standings.
@@ -27,7 +41,7 @@ The app uses MongoDB for persistent event state. Set the `MONGODB_URI` secret to
 - Volunteers have location-scoped accounts. Checkpoints are Coding 1 · SM Block 310, Coding 2 · SM Block 311, Logical 1 · Sports Complex, Logical 2 · KP Ground, Puzzle · CCD, Crossword · Canteen Mangalore, Quiz 1 · D Block, and Quiz 2 · C Block. Demo examples are `coding1 / events`, `logic1 / events`, `puzzle1 / events`, and `mystery1 / events`.
 - Coding verification starts a server-timed five-minute round; each team receives one of the 10 uploaded Coding questions from the shared pool, a correct answer before the deadline awards full points, wrong answers do not reduce points, and timer expiry awards 20% and advances the route. Logical checkpoints have 2 sets each; Puzzle and Crossword have 6 sets each. These missions expose only a set number in the team portal, while volunteers record a score such as `6/10` to release the next clue. Mystery verification starts the uploaded Set 1 or Set 2 quiz, with 20 questions in each set, showing one option question at a time and advancing immediately after selection without showing correctness or points. Riddles have 3 questions per round; each pass stays locked until the team scans the matching physical QR code at the live location.
 - Stations do not enforce a capacity limit. The leaderboard uses score first and total completion time second; attempts are not shown or used for ranking.
-- Login and API requests do not use IP-based rate limits. The app is intended to support large event logins, subject to the runtime's available resources.
+- Login and API requests do not use IP-based rate limits. The app is intended to support large event logins, subject to the runtime's available resources. JSON request bodies are capped at 2 MB and database waits are bounded so overload returns a retryable error instead of growing memory without limit.
 
 ## Replit preview
 

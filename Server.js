@@ -8,6 +8,9 @@ const QRCode = require('qrcode');
 const app = express();
 const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
+const INSTANCE_ID = `${process.pid}-${crypto.randomUUID()}`;
+const STATE_LOCK_TTL_MS = 30000;
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const ADMIN_USERNAME = 'majen';
 const ADMIN_PASSWORD = 'majen';
 const ORGANIZER_ACCOUNTS = {
@@ -496,7 +499,6 @@ function syncRiddleDefinitions() {
 const baseRoute = challengeSeed.map((challenge) => challenge.id);
 const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false }]));
 const teams = new Map();
-const sessions = new Map();
 const auditLog = [];
 const state = {
   eventName: 'TechHunt 2026',
@@ -511,8 +513,15 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env['mongodb+srv'];
 const MONGODB_DB = process.env.MONGODB_DB || 'techhunt';
 let mongoClient = null;
 let appStateCollection = null;
+let sessionsCollection = null;
+let appLocksCollection = null;
 let persistenceWarning = null;
 let persistenceChain = Promise.resolve();
+let snapshotVersion = 0;
+let localMutationTail = Promise.resolve();
+let activeMutation = Promise.resolve();
+let stateDirty = false;
+let lastSnapshotRefreshAt = 0;
 
 function normalizeTeamName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
@@ -588,6 +597,9 @@ function appSnapshot() {
 
 function hydrateSnapshot(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.challengeSeed)) return;
+  const incomingVersion = Number(snapshot.version) || 0;
+  if (incomingVersion < snapshotVersion) return;
+  snapshotVersion = incomingVersion;
   Object.assign(state, snapshot.state || {});
   challengeSeed.splice(0, challengeSeed.length, ...snapshot.challengeSeed);
   baseRoute.splice(0, baseRoute.length, ...challengeSeed.map((challenge) => challenge.id));
@@ -603,9 +615,20 @@ async function connectDatabase() {
   if (!MONGODB_URI) {
     throw new Error('MONGODB_URI is required to start TechHunt with persistent event storage.');
   }
-  mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+  mongoClient = new MongoClient(MONGODB_URI, {
+    serverSelectionTimeoutMS: 10000,
+    waitQueueTimeoutMS: 5000,
+    maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE) || 40,
+    maxConnecting: 4,
+    retryReads: true,
+    retryWrites: true,
+  });
   await mongoClient.connect();
-  appStateCollection = mongoClient.db(MONGODB_DB).collection('app_state');
+  const database = mongoClient.db(MONGODB_DB);
+  appStateCollection = database.collection('app_state');
+  sessionsCollection = database.collection('sessions');
+  appLocksCollection = database.collection('app_locks');
+  await sessionsCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   const snapshot = await appStateCollection.findOne({ _id: 'current' });
   hydrateSnapshot(snapshot);
   await persistAppState();
@@ -615,6 +638,8 @@ async function connectDatabase() {
 function persistAppState() {
   if (!appStateCollection) return persistenceChain;
   const snapshot = appSnapshot();
+  snapshot.version = snapshotVersion + 1;
+  snapshotVersion = snapshot.version;
   persistenceChain = persistenceChain
     .then(() => appStateCollection.replaceOne({ _id: 'current' }, snapshot, { upsert: true }))
     .catch((error) => {
@@ -624,8 +649,71 @@ function persistAppState() {
   return persistenceChain;
 }
 
+async function refreshAppState(force = false) {
+  if (!appStateCollection) return;
+  if (!force && !stateDirty && Date.now() - lastSnapshotRefreshAt < 250) return;
+  const snapshot = await appStateCollection.findOne({ _id: 'current' });
+  if (snapshot && !stateDirty) {
+    hydrateSnapshot(snapshot);
+    lastSnapshotRefreshAt = Date.now();
+  }
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function acquireDatabaseStateLock() {
+  if (!appLocksCollection) return async () => {};
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const now = new Date();
+    const expiresAt = new Date(Date.now() + STATE_LOCK_TTL_MS);
+    try {
+      const result = await appLocksCollection.findOneAndUpdate(
+        {
+          _id: 'app-state',
+          $or: [{ expiresAt: { $lte: now } }, { owner: INSTANCE_ID }],
+        },
+        { $set: { owner: INSTANCE_ID, expiresAt } },
+        { upsert: true, returnDocument: 'after' },
+      );
+      const lock = result?.value || result;
+      if (lock?.owner === INSTANCE_ID) {
+        return async () => {
+          await appLocksCollection.updateOne(
+            { _id: 'app-state', owner: INSTANCE_ID },
+            { $set: { expiresAt: new Date(0) } },
+          );
+        };
+      }
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
+    await sleep(75);
+  }
+  throw new Error('The shared event state is busy. Please retry.');
+}
+
+async function claimLocalMutationSlot() {
+  const previous = localMutationTail;
+  let release;
+  localMutationTail = new Promise((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  let complete;
+  activeMutation = new Promise((resolve) => {
+    complete = resolve;
+  });
+  return () => {
+    complete();
+    release();
+  };
+}
+
 app.use(compression());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.get('/', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -659,13 +747,47 @@ app.get('/manifest.json', (req, res) => {
   });
 });
 app.get('/favicon.ico', (req, res) => res.status(204).end());
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method)) {
-    res.on('finish', () => {
-      if (res.statusCode >= 200 && res.statusCode < 300) void persistAppState();
-    });
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health') return next();
+  const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  let releaseLocalMutation = () => {};
+  let releaseDatabaseLock = async () => {};
+  let finalized = false;
+  const finalize = async () => {
+    if (finalized) return;
+    finalized = true;
+    try {
+      if (mutating && res.statusCode >= 200 && res.statusCode < 300) {
+        await persistAppState();
+      }
+      if (mutating) stateDirty = false;
+      await releaseDatabaseLock();
+    } catch (error) {
+      persistenceWarning = error.message;
+      console.error(`Request state finalization failed: ${error.message}`);
+    } finally {
+      if (mutating) releaseLocalMutation();
+    }
+  };
+  try {
+    if (mutating) {
+      releaseLocalMutation = await claimLocalMutationSlot();
+      releaseDatabaseLock = await acquireDatabaseStateLock();
+      await refreshAppState(true);
+      stateDirty = true;
+    } else {
+      await activeMutation;
+      await refreshAppState();
+    }
+    res.once('finish', () => void finalize());
+    res.once('close', () => void finalize());
+    next();
+  } catch (error) {
+    await releaseDatabaseLock();
+    stateDirty = false;
+    if (mutating) releaseLocalMutation();
+    return res.status(503).json({ error: 'Shared event storage is temporarily unavailable. Please retry.' });
   }
-  next();
 });
 
 function writeAudit(action, detail, actor = 'admin') {
@@ -673,18 +795,44 @@ function writeAudit(action, detail, actor = 'admin') {
   if (auditLog.length > 30) auditLog.pop();
 }
 
-function sessionUser(req) {
+async function createSession(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const now = new Date();
+  await sessionsCollection.insertOne({
+    _id: token,
+    user: { ...user, lastSeenAt: now.toISOString() },
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
+  });
+  return token;
+}
+
+async function sessionUser(req) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const user = token ? sessions.get(token) : null;
-  if (user) user.lastSeenAt = new Date().toISOString();
+  if (!token || !sessionsCollection) return null;
+  const session = await sessionsCollection.findOne({
+    _id: token,
+    expiresAt: { $gt: new Date() },
+  });
+  if (!session) return null;
+  const user = session.user;
+  const now = new Date();
+  if (!user.lastSeenAt || now.getTime() - new Date(user.lastSeenAt).getTime() > 10000) {
+    user.lastSeenAt = now.toISOString();
+    void sessionsCollection.updateOne({ _id: token }, { $set: { 'user.lastSeenAt': user.lastSeenAt } });
+  }
   return user;
 }
 
-function requireAuth(req, res, next) {
-  const user = sessionUser(req);
-  if (!user) return res.status(401).json({ error: 'Please sign in to continue.' });
-  req.user = user;
-  return next();
+async function requireAuth(req, res, next) {
+  try {
+    const user = await sessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Please sign in to continue.' });
+    req.user = user;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 }
 
 function requireAdmin(req, res, next) {
@@ -972,67 +1120,70 @@ function overview() {
   };
 }
 
-app.post('/api/login', (req, res) => {
-  const { role = 'team', username = '', password = '', teamName: submittedTeamName = '' } = req.body || {};
-  if (role === 'admin') {
-    if (username.trim().toLowerCase() !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-      return res.status(401).json({ error: 'That admin credential is not recognised.' });
+app.post('/api/login', async (req, res, next) => {
+  try {
+    const { role = 'team', username = '', password = '', teamName: submittedTeamName = '' } = req.body || {};
+    if (role === 'admin') {
+      if (username.trim().toLowerCase() !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ error: 'That admin credential is not recognised.' });
+      }
+      const user = { role: 'admin', username: ADMIN_USERNAME };
+      const token = await createSession(user);
+      writeAudit('ADMIN SIGN IN', 'Mission control access granted');
+      return res.json({ token, user });
     }
-    const token = crypto.randomBytes(24).toString('hex');
-    sessions.set(token, { role: 'admin', username: ADMIN_USERNAME });
-    writeAudit('ADMIN SIGN IN', 'Mission control access granted');
-    return res.json({ token, user: { role: 'admin', username: ADMIN_USERNAME } });
-  }
 
-  if (role === 'organizer') {
-    const organizerUsername = username.trim().toLowerCase();
-    const account = ORGANIZER_ACCOUNTS[organizerUsername];
-    if (!account || password !== 'events') return res.status(401).json({ error: 'Use a valid organizer account.' });
-    const token = crypto.randomBytes(24).toString('hex');
-    const now = new Date().toISOString();
-    sessions.set(token, { role: 'organizer', username: organizerUsername, connectedAt: now, lastSeenAt: now, ...account });
-    writeAudit('ORGANIZER CONNECTED', `${account.checkpointLabel} checkpoint console opened`);
-    return res.json({ token, user: { role: 'organizer', username: username.trim().toLowerCase(), ...account } });
-  }
+    if (role === 'organizer') {
+      const organizerUsername = username.trim().toLowerCase();
+      const account = ORGANIZER_ACCOUNTS[organizerUsername];
+      if (!account || password !== 'events') return res.status(401).json({ error: 'Use a valid organizer account.' });
+      const user = { role: 'organizer', username: organizerUsername, connectedAt: new Date().toISOString(), ...account };
+      const token = await createSession(user);
+      writeAudit('ORGANIZER CONNECTED', `${account.checkpointLabel} checkpoint console opened`);
+      return res.json({ token, user });
+    }
 
-  const teamId = username.trim().toUpperCase();
-  if (!/^TEAM[-_][A-Z0-9_-]{1,48}$/.test(teamId)) {
-    return res.status(400).json({ error: 'Use a team code such as TEAM-01.' });
-  }
-  const teamName = normalizeTeamName(submittedTeamName);
-  if (!teamName) {
-    return res.status(400).json({ error: 'Enter your registered team name.' });
-  }
-  if (teamName.length < 2 || teamName.length > 48) {
-    return res.status(400).json({ error: 'Team name must be between 2 and 48 characters.' });
-  }
-  if (!password || typeof password !== 'string') {
-    return res.status(400).json({ error: 'A team password is required.' });
-  }
-  if (password.length < 4 || password.length > 128) {
-    return res.status(400).json({ error: 'Team password must be between 4 and 128 characters.' });
-  }
-  let team = teams.get(teamId);
-  if (!team) {
-    if (findTeamByName(teamName)) {
-      return res.status(409).json({ error: 'That team name is already registered. Choose a different name.' });
+    const teamId = username.trim().toUpperCase();
+    if (!/^TEAM[-_][A-Z0-9_-]{1,48}$/.test(teamId)) {
+      return res.status(400).json({ error: 'Use a team code such as TEAM-01.' });
     }
-    team = createTeam(teamId, teamName, password);
-  } else {
-    if (teamNameKey(team.name) !== teamNameKey(teamName)) {
-      return res.status(401).json({ error: 'That team name is not recognised for this team code.' });
+    const teamName = normalizeTeamName(submittedTeamName);
+    if (!teamName) {
+      return res.status(400).json({ error: 'Enter your registered team name.' });
     }
-    if (!team.passwordHash) {
-      team.passwordHash = hashTeamPassword(password);
-    } else if (!verifyTeamPassword(password, team.passwordHash)) {
-      return res.status(401).json({ error: 'That team password is not recognised.' });
+    if (teamName.length < 2 || teamName.length > 48) {
+      return res.status(400).json({ error: 'Team name must be between 2 and 48 characters.' });
     }
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'A team password is required.' });
+    }
+    if (password.length < 4 || password.length > 128) {
+      return res.status(400).json({ error: 'Team password must be between 4 and 128 characters.' });
+    }
+    let team = teams.get(teamId);
+    if (!team) {
+      if (findTeamByName(teamName)) {
+        return res.status(409).json({ error: 'That team name is already registered. Choose a different name.' });
+      }
+      team = createTeam(teamId, teamName, password);
+    } else {
+      if (teamNameKey(team.name) !== teamNameKey(teamName)) {
+        return res.status(401).json({ error: 'That team name is not recognised for this team code.' });
+      }
+      if (!team.passwordHash) {
+        team.passwordHash = hashTeamPassword(password);
+      } else if (!verifyTeamPassword(password, team.passwordHash)) {
+        return res.status(401).json({ error: 'That team password is not recognised.' });
+      }
+    }
+    const user = { role: 'team', teamId };
+    const token = await createSession(user);
+    team.active = true;
+    writeAudit('TEAM CONNECTED', `${teamId} joined the circuit`, teamId);
+    return res.json({ token, user: { ...user, name: team.name } });
+  } catch (error) {
+    return next(error);
   }
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { role: 'team', teamId });
-  team.active = true;
-  writeAudit('TEAM CONNECTED', `${teamId} joined the circuit`, teamId);
-  return res.json({ token, user: { role: 'team', teamId, name: team.name } });
 });
 
 app.get('/api/health', (req, res) => {
@@ -1043,10 +1194,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.post('/api/logout', requireAuth, (req, res) => {
+app.post('/api/logout', requireAuth, async (req, res, next) => {
+  try {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  sessions.delete(token);
-  res.json({ ok: true });
+    await sessionsCollection.deleteOne({ _id: token });
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.get('/api/me', requireAuth, (req, res) => res.json(req.user));
@@ -1077,37 +1232,46 @@ app.get('/api/admin/teams', requireAuth, requireAdmin, (req, res) => {
   res.json({ teams: [...teams.values()].map(publicTeam) });
 });
 
-app.get('/api/admin/volunteers', requireAuth, requireAdmin, (req, res) => {
-  const now = Date.now();
-  const volunteers = Object.entries(ORGANIZER_ACCOUNTS).map(([username, account]) => {
-    const volunteerSessions = [...sessions.values()]
-      .filter((session) => session.role === 'organizer' && session.username === username);
-    const lastSeenAt = volunteerSessions
-      .map((session) => session.lastSeenAt)
-      .filter(Boolean)
-      .sort()
-      .at(-1) || null;
-    const onlineSessions = volunteerSessions.filter((session) => (
-      session.lastSeenAt && now - new Date(session.lastSeenAt).getTime() <= 15000
-    )).length;
-    const teamsAtCheckpoint = [...teams.values()].filter((team) => {
-      const challenge = getTeamChallenge(team);
-      return team.active && challenge
-        && challenge.type.toLowerCase() === account.checkpointType
-        && challenge.station === account.checkpointLabel;
-    }).length;
-    return {
-      username,
-      checkpointType: account.checkpointType,
-      checkpointId: account.checkpointId,
-      checkpointLabel: account.checkpointLabel,
-      online: onlineSessions > 0,
-      activeSessions: onlineSessions,
-      lastSeenAt,
-      teamsAtCheckpoint,
-    };
-  });
-  res.json({ volunteers });
+app.get('/api/admin/volunteers', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const now = Date.now();
+    const sessions = await sessionsCollection.find({
+      'user.role': 'organizer',
+      expiresAt: { $gt: new Date() },
+    }).project({ user: 1 }).toArray();
+    const volunteers = Object.entries(ORGANIZER_ACCOUNTS).map(([username, account]) => {
+      const volunteerSessions = sessions
+        .map((session) => session.user)
+        .filter((session) => session.username === username);
+      const lastSeenAt = volunteerSessions
+        .map((session) => session.lastSeenAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1) || null;
+      const onlineSessions = volunteerSessions.filter((session) => (
+        session.lastSeenAt && now - new Date(session.lastSeenAt).getTime() <= 15000
+      )).length;
+      const teamsAtCheckpoint = [...teams.values()].filter((team) => {
+        const challenge = getTeamChallenge(team);
+        return team.active && challenge
+          && challenge.type.toLowerCase() === account.checkpointType
+          && challenge.station === account.checkpointLabel;
+      }).length;
+      return {
+        username,
+        checkpointType: account.checkpointType,
+        checkpointId: account.checkpointId,
+        checkpointLabel: account.checkpointLabel,
+        online: onlineSessions > 0,
+        activeSessions: onlineSessions,
+        lastSeenAt,
+        teamsAtCheckpoint,
+      };
+    });
+    return res.json({ volunteers });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
@@ -1302,20 +1466,22 @@ app.post('/api/admin/end-event', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, status: state.status, elapsedSeconds: state.elapsedSeconds });
 });
 
-app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
-  const deletedTeams = teams.size;
-  teams.clear();
-  for (const [token, session] of sessions.entries()) {
-    if (session.role === 'team') sessions.delete(token);
+app.post('/api/admin/reset-event', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const deletedTeams = teams.size;
+    teams.clear();
+    await sessionsCollection.deleteMany({ 'user.role': 'team' });
+    state.status = 'NOT_STARTED';
+    state.startedAt = null;
+    state.endedAt = null;
+    state.elapsedSeconds = 0;
+    state.totalPausedSeconds = 0;
+    state.pauseStartedAt = null;
+    writeAudit('EVENT RESET', `All ${deletedTeams} team accounts and progress were deleted`);
+    return res.json({ ok: true, deletedTeams });
+  } catch (error) {
+    return next(error);
   }
-  state.status = 'NOT_STARTED';
-  state.startedAt = null;
-  state.endedAt = null;
-  state.elapsedSeconds = 0;
-  state.totalPausedSeconds = 0;
-  state.pauseStartedAt = null;
-  writeAudit('EVENT RESET', `All ${deletedTeams} team accounts and progress were deleted`);
-  res.json({ ok: true, deletedTeams });
 });
 
 app.post('/api/admin/toggle-round', requireAuth, requireAdmin, (req, res) => {
@@ -1587,11 +1753,20 @@ app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
   res.json({ ok: true, points: req.body.status === 'completed' ? 100 : 0 });
 });
 
+app.use((error, req, res, next) => {
+  console.error(`Unhandled request error: ${error.message}`);
+  if (res.headersSent) return next(error);
+  return res.status(500).json({ error: 'The server could not complete that request.' });
+});
+
 async function startServer() {
   await connectDatabase();
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
   });
+  server.requestTimeout = 30000;
+  server.headersTimeout = 35000;
+  server.keepAliveTimeout = 5000;
 }
 
 startServer().catch((error) => {
