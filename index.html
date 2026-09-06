@@ -216,30 +216,28 @@
      .theme-light .theme-toggle-icon:after { background: var(--paper); top: -3px; left: 5px; }
      .theme-light .theme-toggle { color: var(--orange-dark); background: var(--orange-soft); border-color: rgba(200,73,37,.22); }
      .theme-light .theme-toggle:hover { background: #ffe4d8; border-color: rgba(200,73,37,.4); }
-     .team-layout > *, .grid > *, .stats > *, .team-columns > * { animation: surface-rise .55s cubic-bezier(.2,.8,.2,1) both; }
-     .team-layout > :nth-child(2), .grid > :nth-child(2), .team-columns > :nth-child(2) { animation-delay: .08s; }
-     .team-layout > :nth-child(3), .grid > :nth-child(3) { animation-delay: .16s; }
-     .mission { animation: mission-focus .6s cubic-bezier(.2,.8,.2,1) both !important; }
-     .team-hero { animation: hero-arrive .7s cubic-bezier(.2,.8,.2,1) both; }
-     .team-hero:after { animation: orbit-drift 16s ease-in-out infinite alternate; }
-     .progress-track i { animation: progress-glow 2.4s ease-in-out infinite; }
-     .question-card { animation: question-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
-     .question-card:nth-child(2) { animation-delay: .07s; }
-     .question-card:nth-child(3) { animation-delay: .14s; }
+     #view.animate-in .team-layout > *, #view.animate-in .grid > *, #view.animate-in .stats > *, #view.animate-in .team-columns > * { animation: surface-rise .42s cubic-bezier(.2,.8,.2,1) both; }
+     #view.animate-in .team-layout > :nth-child(2), #view.animate-in .grid > :nth-child(2), #view.animate-in .team-columns > :nth-child(2) { animation-delay: .06s; }
+     #view.animate-in .team-layout > :nth-child(3), #view.animate-in .grid > :nth-child(3) { animation-delay: .12s; }
+     #view.animate-in .mission { animation: mission-focus .45s cubic-bezier(.2,.8,.2,1) both !important; }
+     #view.animate-in .team-hero { animation: hero-arrive .5s cubic-bezier(.2,.8,.2,1) both; }
+     #view.animate-in .team-hero:after { animation: orbit-drift 1.2s ease-out 1 both; }
+     #view.animate-in .progress-track i { animation: progress-glow .7s ease-out 1 both; }
+     #view.animate-in .question-card { animation: question-arrive .38s cubic-bezier(.2,.8,.2,1) both; }
+     #view.animate-in .question-card:nth-child(2) { animation-delay: .05s; }
+     #view.animate-in .question-card:nth-child(3) { animation-delay: .1s; }
      .challenge-row, .stat, .card, .primary, .outline, .quiz-option, .rank-row { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease; }
      .challenge-row:hover, .stat:hover { transform: translateY(-2px); }
      .card:hover { box-shadow: 0 16px 44px rgba(0,0,0,.2); }
-     .live-status .dot { animation: status-pulse 2s ease-in-out infinite; }
-     .timer { animation: timer-breathe 2.2s ease-in-out infinite; }
-     .riddle-qr { animation: qr-arrive .55s cubic-bezier(.2,.8,.2,1) both; }
+     .live-status .dot { box-shadow: 0 0 0 4px rgba(45,139,104,.12); }
+     .timer { transition: background .2s ease, color .2s ease, box-shadow .2s ease; }
+     #view.animate-in .riddle-qr { animation: qr-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
      @keyframes surface-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
      @keyframes mission-focus { from { opacity: 0; transform: translateY(16px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
      @keyframes hero-arrive { from { opacity: 0; transform: translateY(-10px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
      @keyframes orbit-drift { from { transform: translate(0, 0) rotate(0deg); } to { transform: translate(-18px, 12px) rotate(8deg); } }
-     @keyframes progress-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+     @keyframes progress-glow { from { filter: brightness(1); } to { filter: brightness(1.12); } }
      @keyframes question-arrive { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
-     @keyframes status-pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(45,139,104,.12); } 50% { box-shadow: 0 0 0 7px rgba(45,139,104,.04); } }
-     @keyframes timer-breathe { 0%, 100% { box-shadow: 0 0 0 rgba(242,106,61,0); } 50% { box-shadow: 0 0 0 4px rgba(242,106,61,.08); } }
      @keyframes qr-arrive { from { opacity: 0; transform: scale(.96) rotate(-1deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
      @media (prefers-reduced-motion: reduce) {
        *, *:before, *:after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
@@ -666,7 +664,7 @@
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark' };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -797,6 +795,10 @@
       clearScheduledRefresh();
        clearInterval(state.timer);
        state.timer = null;
+       const renderKey = `${state.role}:${state.view}`;
+       state.animateView = state.lastRenderKey !== renderKey;
+       state.lastRenderKey = renderKey;
+       $('#view').classList.toggle('animate-in', state.animateView);
       renderNav();
        $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Teams & progress', adminProgress: 'Teams & progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
       try {
