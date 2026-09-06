@@ -550,7 +550,6 @@ function createTeam(teamId, teamName, password) {
     questionAssignments: {},
     mysteryProgress: {},
     mysteryCorrect: {},
-    riddleScores: {},
     riddleProgress: {},
     riddleScanUnlocked: {},
     startedAt: null,
@@ -979,8 +978,6 @@ app.post('/api/login', (req, res) => {
     puzzle2: { checkpointType: 'puzzle', checkpointId: 'P2', checkpointLabel: 'CANTEEN MANGALORE' },
     mystery1: { checkpointType: 'mystery', checkpointId: 'M1', checkpointLabel: 'D BLOCK' },
     mystery2: { checkpointType: 'mystery', checkpointId: 'M2', checkpointLabel: 'C BLOCK' },
-    riddle1: { checkpointType: 'riddle', checkpointId: 'R1', checkpointLabel: 'RIDDLE 1' },
-    riddle2: { checkpointType: 'riddle', checkpointId: 'R2', checkpointLabel: 'RIDDLE 2' },
     activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
     activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
     activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
@@ -1279,7 +1276,6 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.startedPauseSeconds = 0;
     team.mysteryProgress = {};
     team.mysteryCorrect = {};
-    team.riddleScores = {};
   }
   state.status = 'NOT_STARTED';
   state.startedAt = null;
@@ -1338,7 +1334,6 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.riddleScanUnlocked = {};
   team.mysteryProgress = {};
   team.mysteryCorrect = {};
-  team.riddleScores = {};
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
 });
@@ -1451,8 +1446,8 @@ app.post('/api/organizer/score', requireAuth, (req, res) => {
   const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
   if (!team) return res.status(404).json({ error: 'Team not found.' });
   const challenge = getTeamChallenge(team);
-  if (!challenge || !['PUZZLE', 'LOGIC', 'RIDDLE'].includes(challenge.type) || team.currentChallenge !== challenge.id || !team.startedAt) {
-    return res.status(409).json({ error: 'Unlock this team before recording a Logic, Puzzle, or Riddle score.' });
+  if (!challenge || !['PUZZLE', 'LOGIC'].includes(challenge.type) || team.currentChallenge !== challenge.id || !team.startedAt) {
+    return res.status(409).json({ error: 'Verify this team before recording a Logic or Puzzle score.' });
   }
   if (req.user.checkpointType && req.user.checkpointType !== challenge.type.toLowerCase()) {
     return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
@@ -1467,29 +1462,6 @@ app.post('/api/organizer/score', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Enter one number from 0 to 10.' });
   }
   const elapsed = secondsOnMission(team);
-  if (challenge.type === 'RIDDLE') {
-    const step = team.riddleProgress?.[challenge.id] || 0;
-    const total = challenge.questionSets[0]?.length || 3;
-    team.riddleScores = team.riddleScores || {};
-    const scores = Array.isArray(team.riddleScores?.[challenge.id]) ? team.riddleScores[challenge.id] : [];
-    scores[step] = score;
-    team.riddleScores[challenge.id] = scores;
-    if (step + 1 < total) {
-      team.riddleProgress[challenge.id] = step + 1;
-      team.riddleScanUnlocked[challenge.id] = false;
-      team.currentChallenge = null;
-      team.startedAt = null;
-      team.startedPauseSeconds = 0;
-      team.attempts = 0;
-      writeAudit('RIDDLE SCORED', `${team.id} scored ${score}/10 at ${challenge.riddleLocations?.[step] || challenge.station}`, req.user.username);
-      return res.json({ ok: true, score, maxScore, riddleAdvanced: true, riddleStep: step + 2, riddleTotal: total, team: publicTeam(team) });
-    }
-    const totalScore = scores.reduce((sum, value) => sum + Number(value || 0), 0);
-    const earnedPoints = Math.round((totalScore / (total * maxScore)) * challenge.points);
-    completeChallenge(team, challenge, elapsed, earnedPoints);
-    writeAudit('RIDDLE COMPLETED', `${team.id} scored ${totalScore}/${total * maxScore} across ${challenge.name}`, req.user.username);
-    return res.json({ ok: true, score, maxScore, totalScore, totalMaxScore: total * maxScore, earnedPoints, team: publicTeam(team) });
-  }
   const earnedPoints = Math.round((score / maxScore) * challenge.points);
   completeChallenge(team, challenge, elapsed, earnedPoints);
   writeAudit('MISSION SCORED', `${team.id} scored ${score}/${maxScore} at ${challenge.station}`, req.user.username);
@@ -1510,11 +1482,8 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   const timedOut = challenge.timeLimit > 0 && elapsed > challenge.timeLimit;
   const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [req.body.answer];
   const expectedQuestions = assignedQuestions(team, challenge);
-  if (challenge.type === 'RIDDLE') {
-    if (!team.riddleScanUnlocked?.[challenge.id]) {
-      return res.status(409).json({ error: 'Scan the QR code to unlock this riddle pass.' });
-    }
-    return res.status(409).json({ error: 'A location volunteer records the score for this riddle.' });
+  if (challenge.type === 'RIDDLE' && !team.riddleScanUnlocked?.[challenge.id]) {
+    return res.status(409).json({ error: 'Scan the QR code to unlock this riddle pass.' });
   }
   if (challenge.type === 'MYSTERY') {
     const answer = String(submittedAnswers[0] || '').trim();

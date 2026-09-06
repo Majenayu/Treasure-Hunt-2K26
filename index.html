@@ -1239,10 +1239,10 @@
           : data.event.status === 'ENDED'
             ? '<div class="event-banner is-ended"><div class="event-banner-icon">✓</div><div><strong>The event has ended.</strong><span>The final standings are now locked. Open the results dialog below to return to the start.</span></div></div>'
             : '';
-      const volunteerTypes = ['CODING', 'LOGIC', 'PUZZLE', 'RIDDLE', 'MYSTERY'];
+      const volunteerTypes = ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'];
       const locationRequired = challenge && volunteerTypes.includes(challenge.type);
        const waitingForVolunteer = locationRequired && !team.missionStarted;
-      const volunteerScored = challenge && ['LOGIC', 'PUZZLE', 'RIDDLE'].includes(challenge.type);
+      const volunteerScored = challenge && ['LOGIC', 'PUZZLE'].includes(challenge.type);
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
        const waitingForRiddleScan = challenge?.type === 'RIDDLE' && (!team.missionStarted || riddleScanRequired);
@@ -1286,9 +1286,7 @@
        const activeContent = riddleScanRequired
           ? `<div class="mission-kicker">Physical QR scan required</div><p class="mission-prompt">Go to the next riddle spot and scan the QR placed there. The next pass will unlock only after the physical QR is verified.</p><button id="startMission" data-riddle="true" class="primary">Open camera scanner ↗</button>`
          : volunteerScored
-         ? challenge.type === 'RIDDLE'
-           ? `${questionCards}<p class="card-subtitle" style="margin-top:14px">Solve this riddle with your team. The location volunteer will record one score from 0 to 10.</p>`
-           : `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
+         ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
          : mysteryQuiz
            ? `${questionCards}<p class="card-subtitle" style="margin-top:14px">Choose an option to continue. Your answer result and points are not shown during the quiz.</p>`
         : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : challenge.type === 'RIDDLE' ? 'Submit pass ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
@@ -1314,16 +1312,14 @@
       const teamRows = data.teams.map((team) => {
         const challenge = team.currentChallenge;
          const verified = Boolean(team.missionStarted);
-        const supervisedScore = challenge && ['PUZZLE', 'LOGIC', 'RIDDLE'].includes(challenge.type);
+        const supervisedScore = challenge && ['PUZZLE', 'LOGIC'].includes(challenge.type);
         const status = verified
           ? challenge.type === 'CODING'
             ? `${formatTime(Math.max(0, challenge.timeLimit - team.missionSeconds))} LEFT`
-            : challenge.type === 'MYSTERY' ? 'QUIZ LIVE' : challenge.type === 'RIDDLE' ? 'RIDDLE LIVE' : 'SOLVING'
+            : challenge.type === 'MYSTERY' ? 'QUIZ LIVE' : 'SOLVING'
           : 'AT LOCATION';
         const action = !verified
-          ? challenge.type === 'RIDDLE'
-            ? '<span class="tag ready">Waiting for QR scan</span>'
-            : `<button class="primary verify-team" data-team="${team.id}">Verify team ↗</button>`
+          ? `<button class="primary verify-team" data-team="${team.id}">Verify team ↗</button>`
           : supervisedScore
             ? `<div class="score-entry"><input class="score-input" type="number" min="0" max="10" step="1" inputmode="numeric" data-team="${team.id}" placeholder="0–10" aria-label="Score out of 10 for ${escapeHtml(team.name)}"><button class="outline score-team" data-team="${team.id}">Record /10</button></div>`
             : `<span class="tag">${challenge.type === 'CODING' ? 'Timer running' : 'Participant quiz'}</span>`;
@@ -1336,11 +1332,7 @@
       }));
       document.querySelectorAll('.score-team').forEach((button) => button.addEventListener('click', async () => {
         const input = document.querySelector(`.score-input[data-team="${button.dataset.team}"]`);
-        try {
-          const result = await api('/api/organizer/score', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, score: input.value }) });
-          showToast(result.riddleAdvanced ? 'Riddle score recorded. The next QR location is ready.' : 'Score recorded. Next clue released.');
-          render();
-        } catch (error) { showToast(error.message); }
+        try { await api('/api/organizer/score', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, score: input.value }) }); showToast('Score recorded. Next clue released.'); render(); } catch (error) { showToast(error.message); }
       }));
         scheduleRender(1000);
     }
