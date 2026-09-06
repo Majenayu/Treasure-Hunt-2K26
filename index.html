@@ -70,6 +70,9 @@
     .wide { width: 100%; margin-top: 10px; }
     .login-note { color: var(--muted); font-size: 12px; text-align: center; margin: 18px 0 0; }
     .login-note strong { color: var(--orange-dark); }
+    .login-links { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; font: 500 11px 'DM Mono'; }
+    .login-links a { color: var(--muted); text-decoration: none; }
+    .login-links a:hover { color: var(--orange-dark); text-decoration: underline; }
     .error { background: #fff0ee; color: #b53724; border: 1px solid #f3c6be; border-radius: 10px; padding: 11px 13px; font-size: 13px; margin-bottom: 14px; }
     .app { min-height: 100vh; display: flex; width: 100%; }
     .sidebar { width: 248px; background: var(--ink); color: #fff7f0; padding: 28px 18px; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -673,9 +676,9 @@
     <div class="login-panel">
       <div class="login-card">
         <div class="login-heading">
-          <div class="eyebrow">Welcome to the hunt</div>
-          <h2>Choose your access.</h2>
-          <p>Mission control is ready. Sign in to manage the circuit or enter your team code to unlock your next station.</p>
+          <div id="loginEyebrow" class="eyebrow">Welcome to the hunt</div>
+          <h2 id="loginTitle">Choose your access.</h2>
+          <p id="loginDescription">Mission control is ready. Sign in to manage the circuit or enter your team code to unlock your next station.</p>
         </div>
         <div class="tabs">
           <button class="tab active" data-role="admin">Admin access</button>
@@ -692,9 +695,14 @@
             <label for="password">Password <span id="passwordOptional"></span></label>
             <input id="password" type="password" autocomplete="current-password" placeholder="Enter password">
           </div>
-          <button class="primary wide" type="submit">Enter mission control <span aria-hidden="true">↗</span></button>
+          <button id="loginSubmit" class="primary wide" type="submit">Enter mission control <span aria-hidden="true">↗</span></button>
         </form>
         <p id="loginNote" class="login-note">Demo admin: <strong>majen / majen</strong></p>
+        <div class="login-links">
+          <a href="/">Participant link</a>
+          <a href="/admin">Admin login</a>
+          <a href="/volunteer">Volunteer login</a>
+        </div>
         <button id="loginInstallApp" class="install-app login-install hidden" type="button"><span class="install-icon" aria-hidden="true">↓</span><span class="install-app-label">Install app</span></button>
       </div>
     </div>
@@ -1007,16 +1015,30 @@
       const dialog = $('#eventEndedDialog');
       if (!dialog.open) dialog.showModal();
     }
-    const setLoginError = (message) => { $('#loginError').textContent = message; $('#loginError').classList.toggle('hidden', !message); };
-    const setRole = (role) => {
+     const setLoginError = (message) => { $('#loginError').textContent = message; $('#loginError').classList.toggle('hidden', !message); };
+     const loginMode = location.pathname === '/admin' ? 'admin' : location.pathname === '/volunteer' ? 'organizer' : 'team';
+     const setRole = (role) => {
       document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.role === role));
-      $('#usernameLabel').textContent = role === 'admin' ? 'Admin username' : role === 'organizer' ? 'Checkpoint username' : 'Team code';
-      $('#username').placeholder = role === 'admin' ? 'e.g. majen' : role === 'organizer' ? 'e.g. coding1' : 'e.g. TEAM-01';
+       $('#usernameLabel').textContent = role === 'admin' ? 'Admin username' : role === 'organizer' ? 'Volunteer username' : 'Team code';
+       $('#username').placeholder = role === 'admin' ? 'e.g. majen' : role === 'organizer' ? 'e.g. coding1' : 'e.g. TEAM-01';
       $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Optional team password';
       $('#passwordOptional').textContent = role === 'team' ? '(optional)' : '';
-      $('#loginNote').innerHTML = role === 'admin' ? 'Demo admin: <strong>majen / majen</strong>' : role === 'organizer' ? 'Checkpoint demo: <strong>coding1 / events</strong>' : 'Try a demo team code: <strong>TEAM-01</strong>';
+       $('#loginSubmit').firstChild.textContent = role === 'admin' ? 'Enter admin control ' : role === 'organizer' ? 'Enter volunteer console ' : 'Enter the hunt ';
+       $('#loginNote').innerHTML = role === 'admin' ? 'Demo admin: <strong>majen / majen</strong>' : role === 'organizer' ? 'Demo volunteer: <strong>coding1 / events</strong>' : 'Try a demo team code: <strong>TEAM-01</strong>';
     };
-    document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => setRole(tab.dataset.role)));
+     const configureLoginPage = () => {
+       const pageCopy = {
+         admin: ['Admin mission control', 'Admin access', 'Manage the live circuit, questions, locations, teams, and results.'],
+         organizer: ['Volunteer checkpoint console', 'Volunteer access', 'Verify teams and release missions from your assigned checkpoint.'],
+         team: ['Welcome to the hunt', 'Participant access', 'Enter your team code to unlock your next station.'],
+       }[loginMode];
+       $('#loginEyebrow').textContent = pageCopy[0];
+       $('#loginTitle').textContent = pageCopy[1];
+       $('#loginDescription').textContent = pageCopy[2];
+       document.querySelector('.tabs').classList.toggle('hidden', true);
+       setRole(loginMode);
+     };
+     configureLoginPage();
     $('#loginForm').addEventListener('submit', async (event) => {
       event.preventDefault(); setLoginError('');
       const role = document.querySelector('.tab.active').dataset.role;

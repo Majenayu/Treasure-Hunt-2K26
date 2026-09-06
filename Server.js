@@ -1,6 +1,7 @@
 const express = require('express');
 const compression = require('compression');
 const crypto = require('crypto');
+const { MongoClient } = require('mongodb');
 const path = require('path');
 const QRCode = require('qrcode');
 
@@ -468,6 +469,12 @@ const state = {
   totalPausedSeconds: 0,
   pauseStartedAt: null,
 };
+const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_DB = process.env.MONGODB_DB || 'techhunt';
+let mongoClient = null;
+let appStateCollection = null;
+let persistenceWarning = null;
+let persistenceChain = Promise.resolve();
 
 function createTeam(teamId) {
   const teamNumber = teams.size + 1;
@@ -500,9 +507,62 @@ function createTeam(teamId) {
   return team;
 }
 
+function appSnapshot() {
+  return {
+    _id: 'current',
+    state: JSON.parse(JSON.stringify(state)),
+    challengeSeed: JSON.parse(JSON.stringify(challengeSeed)),
+    challenges: JSON.parse(JSON.stringify([...challenges.entries()])),
+    teams: JSON.parse(JSON.stringify([...teams.entries()])),
+    auditLog: JSON.parse(JSON.stringify(auditLog)),
+    updatedAt: new Date(),
+  };
+}
+
+function hydrateSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.challengeSeed)) return;
+  Object.assign(state, snapshot.state || {});
+  challengeSeed.splice(0, challengeSeed.length, ...snapshot.challengeSeed);
+  baseRoute.splice(0, baseRoute.length, ...challengeSeed.map((challenge) => challenge.id));
+  challenges.clear();
+  for (const [id, challenge] of snapshot.challenges || []) challenges.set(id, challenge);
+  teams.clear();
+  for (const [id, team] of snapshot.teams || []) teams.set(id, team);
+  auditLog.splice(0, auditLog.length, ...(snapshot.auditLog || []).slice(0, 30));
+}
+
+async function connectDatabase() {
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is required to start TechHunt with persistent event storage.');
+  }
+  mongoClient = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+  await mongoClient.connect();
+  appStateCollection = mongoClient.db(MONGODB_DB).collection('app_state');
+  const snapshot = await appStateCollection.findOne({ _id: 'current' });
+  hydrateSnapshot(snapshot);
+  await persistAppState();
+  console.log(`MongoDB connected · database ${MONGODB_DB}`);
+}
+
+function persistAppState() {
+  if (!appStateCollection) return persistenceChain;
+  const snapshot = appSnapshot();
+  persistenceChain = persistenceChain
+    .then(() => appStateCollection.replaceOne({ _id: 'current' }, snapshot, { upsert: true }))
+    .catch((error) => {
+      persistenceWarning = error.message;
+      console.error(`MongoDB persistence failed: ${error.message}`);
+    });
+  return persistenceChain;
+}
+
 app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+app.get(['/admin', '/volunteer'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -531,6 +591,14 @@ app.get('/manifest.json', (req, res) => {
   });
 });
 app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') && !['GET', 'HEAD'].includes(req.method)) {
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) void persistAppState();
+    });
+  }
+  next();
+});
 
 function writeAudit(action, detail, actor = 'admin') {
   auditLog.unshift({ id: crypto.randomUUID(), action, detail, actor, at: new Date().toISOString() });
@@ -881,6 +949,14 @@ app.post('/api/login', (req, res) => {
   team.active = true;
   writeAudit('TEAM CONNECTED', `${teamId} joined the circuit`, teamId);
   return res.json({ token, user: { role: 'team', teamId, name: team.name } });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: Boolean(appStateCollection),
+    database: appStateCollection ? 'connected' : 'disconnected',
+    persistenceWarning,
+  });
 });
 
 app.post('/api/logout', requireAuth, (req, res) => {
@@ -1401,7 +1477,20 @@ app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
   res.json({ ok: true, points: req.body.status === 'completed' ? 100 : 0 });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
-  console.log('Demo admin login: majen / majen');
+async function startServer() {
+  await connectDatabase();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
+    console.log('Demo admin login: majen / majen');
+  });
+}
+
+startServer().catch((error) => {
+  console.error(`TechHunt could not start: ${error.message}`);
+  process.exitCode = 1;
+});
+
+process.on('SIGTERM', async () => {
+  await persistenceChain;
+  if (mongoClient) await mongoClient.close();
 });
