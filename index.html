@@ -1014,13 +1014,10 @@
     function showFinalDialog(team, data, complete) {
       if (state.finalDialogShown) return;
       state.finalDialogShown = true;
-      const rank = data.teamRank || '—';
-      const inTop = Number(rank) > 0 && Number(rank) <= 3;
+      const inTop = Boolean(data.isTopFinisher);
       $('#finalDialogTitle').textContent = data.event.status === 'ENDED' ? 'The event has ended' : 'You crossed the finish line';
       $('#finalDialogMessage').textContent = inTop
-        ? Number(rank) === 1
-          ? `Amazing work, ${team.name}. You are in the top spot.`
-          : `Amazing work, ${team.name}. You are in the top three.`
+        ? `Amazing work, ${team.name}. You are in the top three.`
         : complete
           ? `Great run, ${team.name}. Your final result is locked on the standings.`
           : `The final standings are ready for ${team.name}.`;

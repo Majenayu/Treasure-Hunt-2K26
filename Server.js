@@ -1374,7 +1374,7 @@ app.get('/api/team/state', requireAuth, (req, res) => {
   const team = teams.get(req.user.teamId);
   const board = leaderboard();
   const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
-  res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), teamRank, event: state });
+  res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), isTopFinisher: Number(teamRank) > 0 && teamRank <= 3, event: state });
 });
 
 app.get('/api/admin/riddle-qrs', requireAuth, requireAdmin, async (req, res) => {

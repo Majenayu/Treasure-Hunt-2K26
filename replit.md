@@ -17,7 +17,7 @@ It listens on the `PORT` environment variable and defaults to port `5000` for Re
 
 ## Current storage model
 
-The app uses MongoDB for persistent event state. Set `MONGODB_URI` to the MongoDB connection string (the imported setup also accepts the existing `mongodb+srv` secret name) and optionally set `MONGODB_DB` to choose the database; it defaults to `techhunt`. Teams, sessions, challenge progress, and admin activity are persisted in the `app_state` collection.
+The app uses MongoDB for persistent event state. Set the `MONGODB_URI` secret to the MongoDB connection string and optionally set `MONGODB_DB` to choose the database; it defaults to `techhunt`. Teams, sessions, challenge progress, and admin activity are persisted in the `app_state` collection.
 
 ## Main flows
 
