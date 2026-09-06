@@ -826,7 +826,7 @@
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v4').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, routeTimer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null, surpriseRound: null, surpriseTimer: null, lastSurpriseResponseAt: 0 };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, routeTimer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null, surpriseRound: null, surpriseTimer: null, lastSurpriseResponseAt: 0, lastSurpriseAlertId: null };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -963,6 +963,36 @@
       const dialog = $('#surpriseRoundDialog');
       if (dialog?.open) dialog.close();
     };
+     const alertSurpriseRound = (round) => {
+       if (!round?.id || state.lastSurpriseAlertId === round.id) return;
+       state.lastSurpriseAlertId = round.id;
+       document.title = 'SURPRISE ROUND · TechHunt 2026';
+       if (navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 700]);
+       try {
+         const AudioContext = window.AudioContext || window.webkitAudioContext;
+         if (AudioContext) {
+           const audio = new AudioContext();
+           const start = audio.currentTime;
+           [0, 0.2, 0.4].forEach((offset) => {
+             const oscillator = audio.createOscillator();
+             const gain = audio.createGain();
+             oscillator.type = 'square';
+             oscillator.frequency.value = 880;
+             gain.gain.setValueAtTime(0.0001, start + offset);
+             gain.gain.exponentialRampToValueAtTime(0.12, start + offset + 0.02);
+             gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.14);
+             oscillator.connect(gain);
+             gain.connect(audio.destination);
+             oscillator.start(start + offset);
+             oscillator.stop(start + offset + 0.15);
+           });
+           setTimeout(() => audio.close().catch(() => {}), 1200);
+         }
+       } catch (_) {}
+       if ('Notification' in window && Notification.permission === 'granted') {
+         try { new Notification('Surprise Round', { body: 'Your team has been called to M510.', tag: round.id }); } catch (_) {}
+       }
+     };
     const showSurpriseRound = (round) => {
       if (!round?.canRespond) {
         closeSurpriseDialog();
@@ -983,6 +1013,7 @@
         $('#surpriseAccept').disabled = false;
         $('#surpriseReject').disabled = false;
         dialog.showModal();
+         alertSurpriseRound(round);
       }
       clearInterval(state.surpriseTimer);
       state.surpriseTimer = setInterval(update, 1000);
