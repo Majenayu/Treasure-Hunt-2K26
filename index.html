@@ -824,7 +824,7 @@
   </dialog>
 
   <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v3').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v4').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
       const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, routeTimer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null, surpriseRound: null, surpriseTimer: null, lastSurpriseResponseAt: 0 };
     const api = async (url, options = {}) => {
@@ -1425,13 +1425,13 @@
          : waitingForVolunteer
          ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
           : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
-       const activeContent = riddleScanRequired
+        const activeContent = challenge?.type === 'RIDDLE'
           ? riddleContent
-         : volunteerScored
+          : volunteerScored
          ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
          : mysteryQuiz
            ? `${questionCards}<p class="card-subtitle" style="margin-top:14px">Choose an option to continue. Your answer result and points are not shown during the quiz.</p>`
-        : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : challenge.type === 'RIDDLE' ? 'Submit pass ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
+        : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
       const missionContent = complete
         ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ${totalMissions} stations. Your time and score have been recorded for the event staff.</p>`
          : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${challenge.type === 'RIDDLE' ? riddleContent : team.missionStarted ? activeContent : waitingContent}`;

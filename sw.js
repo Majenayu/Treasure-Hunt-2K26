@@ -1,7 +1,7 @@
 // TechHunt 2026 — Service Worker
 // Caches static assets, serves API fresh from network, handles push notifications
 
-const CACHE_NAME = 'techhunt-orange-v3';
+const CACHE_NAME = 'techhunt-orange-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
