@@ -1,7 +1,7 @@
-// CodeHunt 2K26 — Service Worker
+// TechHunt 2026 — Service Worker
 // Caches static assets, serves API fresh from network, handles push notifications
 
-const CACHE_NAME = 'codehunt-orange-v2';
+const CACHE_NAME = 'techhunt-orange-v1';
 const STATIC_ASSETS = [];
 
 // Install: cache the shell
@@ -58,7 +58,7 @@ self.addEventListener('push', e => {
       icon: data.icon || '/icon-192.png',
       badge: data.badge || '/icon-192.png',
       vibrate: [200, 100, 200],
-      tag: data.tag || 'codehunt-notification',
+      tag: data.tag || 'techhunt-notification',
       requireInteraction: true,
       data: data.data || {},
       actions: [
@@ -67,8 +67,8 @@ self.addEventListener('push', e => {
       ]
     };
     
-    e.waitUntil(
-      self.registration.showNotification(data.title || 'CodeHunt 2K26', options)
+      e.waitUntil(
+      self.registration.showNotification(data.title || 'TechHunt 2026', options)
     );
   } catch (err) {
     console.error('Push notification error:', err);

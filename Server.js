@@ -450,7 +450,7 @@ const teams = new Map();
 const sessions = new Map();
 const auditLog = [];
 const state = {
-  eventName: 'CodeHunt / The Orange Circuit',
+  eventName: 'TechHunt 2026',
   status: 'PAUSED',
   startedAt: null,
   elapsedSeconds: 0,
@@ -497,8 +497,9 @@ app.get('/', (req, res) => {
 app.use(express.static(__dirname, { maxAge: '1h', etag: true }));
 app.get('/manifest.json', (req, res) => {
   res.type('application/manifest+json').send({
-    name: 'CodeHunt / The Orange Circuit',
-    short_name: 'CodeHunt',
+    name: 'TechHunt 2026 — Mission Control',
+    short_name: 'TechHunt 2026',
+    description: 'TechHunt 2026 treasure hunt event app',
     start_url: '/',
     display: 'standalone',
     background_color: '#f7f3ed',
@@ -1022,7 +1023,7 @@ app.post('/api/admin/start-event', requireAuth, requireAdmin, (req, res) => {
   if (state.pauseStartedAt) state.totalPausedSeconds += Math.max(0, Date.now() - new Date(state.pauseStartedAt).getTime()) / 1000;
   if (!state.startedAt) state.startedAt = new Date();
   state.pauseStartedAt = null;
-  writeAudit('EVENT STARTED', 'The Orange Circuit is live');
+  writeAudit('EVENT STARTED', 'TechHunt 2026 is live');
   res.json({ ok: true, started: true, elapsedSeconds: eventElapsedSeconds() });
 });
 
@@ -1286,6 +1287,6 @@ app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`CodeHunt Mission Control running on port ${PORT}`);
+  console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
   console.log('Demo admin login: majen / majen');
 });

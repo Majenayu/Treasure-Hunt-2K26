@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title desc">
+  <title id="title">TechHunt mark</title>
+  <desc id="desc">An orange shield with a connected T and H monogram</desc>
+  <defs>
+    <linearGradient id="orange" x1="16" y1="12" x2="104" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffb04a"/>
+      <stop offset=".48" stop-color="#f26a3d"/>
+      <stop offset="1" stop-color="#c84925"/>
+    </linearGradient>
+  </defs>
+  <path d="M60 7 105 22v35c0 27-17 45-45 56C32 102 15 84 15 57V22L60 7Z" fill="#171411"/>
+  <path d="M60 14 97 26v30c0 22-12 37-37 48-25-11-37-26-37-48V26l37-12Z" fill="url(#orange)"/>
+  <path d="M34 31h52v12H69v38H57V43H34V31Z" fill="#fffaf4"/>
+  <path d="M31 52h25v12H31V52Zm33 0h25v12H64V52Z" fill="#fffaf4"/>
+  <path d="M60 77c-5 0-9 4-9 9v5h18v-5c0-5-4-9-9-9Zm-3 7a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z" fill="#171411"/>
+  <path d="M55 91h10v10l-5 4-5-4V91Z" fill="#171411"/>
+</svg>

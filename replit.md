@@ -1,4 +1,4 @@
-# CodeHunt / The Orange Circuit
+# TechHunt 2026
 
 ## Run
 

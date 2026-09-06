@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="description" content="CodeHunt — The Orange Circuit mission control">
-  <title>CodeHunt / The Orange Circuit</title>
+  <meta name="description" content="TechHunt 2026 mission control">
+  <title>TechHunt 2026 / Mission Control</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,6 +43,9 @@
     .login-art:after { width: 380px; height: 380px; right: -100px; bottom: -45px; }
     .brand { display: flex; align-items: center; gap: 12px; font-family: 'Space Grotesk'; font-weight: 700; letter-spacing: -.04em; position: relative; z-index: 1; }
     .brand-mark { background: var(--ink); color: var(--orange); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; font-weight: 700; }
+    .brand-mark-image { display: block; width: 36px; height: 36px; flex: 0 0 36px; }
+    .login-art .brand { gap: 10px; }
+    .login-art .brand-mark-image { width: 42px; height: 42px; flex-basis: 42px; }
     .art-copy { position: relative; z-index: 1; max-width: 450px; }
     .eyebrow { font: 500 11px 'DM Mono'; letter-spacing: .13em; text-transform: uppercase; opacity: .7; }
     .art-copy h1 { font: 700 clamp(48px, 6vw, 82px)/.92 'Space Grotesk'; letter-spacing: -.08em; margin: 24px 0; max-width: 500px; }
@@ -299,7 +302,7 @@
       .riddle-qr img { width: 112px; height: 112px; }
       .riddle-qr strong { font-size: 13px; }
     }
-    /* Original CodeHunt mission-control skin, recolored for the orange event. */
+    /* TechHunt 2026 mission-control skin in the new orange brand system. */
     body { background: #03050f; color: #eaf0ff; }
     body:before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 99; opacity: .45; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(242,106,61,.018) 2px, rgba(242,106,61,.018) 4px); }
     body:after { content: ''; position: fixed; pointer-events: none; z-index: 0; width: 60%; height: 60%; top: -20%; left: -10%; background: radial-gradient(ellipse, rgba(242,106,61,.08), transparent 70%); }
@@ -604,10 +607,10 @@
 <body>
   <section id="loginScreen" class="shell">
     <div class="login-art">
-      <div class="brand"><span class="brand-mark">CH</span><span>CODEHUNT</span></div>
+      <div class="brand"><img class="brand-mark-image" src="/techhunt-mark.svg" alt=""><span>TECHHUNT</span></div>
       <div class="art-copy">
-        <div class="eyebrow">Campus challenge · 2K26</div>
-        <h1>The Orange Circuit.</h1>
+        <div class="eyebrow">Campus challenge · 2026</div>
+        <h1>TechHunt 2026.</h1>
         <p>Ten stations. One controlled route. Find the signal, solve the mission, and leave your mark on the board.</p>
       </div>
       <div class="art-foot"><span>01 / MISSION CONTROL</span><span>BUILD · MOVE · SOLVE</span></div>
@@ -643,7 +646,7 @@
 
   <div id="app" class="app hidden">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">CH</span><span>CODEHUNT</span></div>
+      <div class="brand"><img class="brand-mark-image" src="/techhunt-mark.svg" alt=""><span>TECHHUNT</span></div>
       <div class="side-label">Navigate</div>
       <nav id="nav" class="nav"></nav>
       <div class="sidebar-bottom">
@@ -653,8 +656,8 @@
     </aside>
     <main class="content">
       <header class="topbar">
-        <div><div class="page-kicker">CodeHunt / The Orange Circuit</div><h1 id="pageTitle">Mission control</h1></div>
-        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> CIRCUIT LIVE</div><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"><span class="theme-toggle-icon" aria-hidden="true"></span><span id="themeToggleLabel" class="theme-toggle-label">Light</span></button><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
+        <div><div class="page-kicker">TechHunt 2026</div><h1 id="pageTitle">Mission control</h1></div>
+        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> EVENT LIVE</div><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"><span class="theme-toggle-icon" aria-hidden="true"></span><span id="themeToggleLabel" class="theme-toggle-label">Light</span></button><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
       </header>
       <div id="view" class="page"></div>
     </main>

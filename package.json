@@ -1,7 +1,7 @@
 {
-  "name": "codehunt",
+  "name": "techhunt-2026",
   "version": "1.0.0",
-  "description": "CodeHunt Treasure Hunt Event Application",
+  "description": "TechHunt 2026 Treasure Hunt Event Application",
   "main": "Server.js",
   "scripts": {
     "start": "node Server.js"
