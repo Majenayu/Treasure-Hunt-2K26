@@ -10,6 +10,19 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 const ADMIN_USERNAME = 'majen';
 const ADMIN_PASSWORD = 'majen';
+const ORGANIZER_ACCOUNTS = {
+  coding1: { checkpointType: 'coding', checkpointId: 'C1', checkpointLabel: 'SM BLOCK 310' },
+  coding2: { checkpointType: 'coding', checkpointId: 'C2', checkpointLabel: 'SM BLOCK 311' },
+  logic1: { checkpointType: 'logic', checkpointId: 'L1', checkpointLabel: 'SPORTS COMPLEX' },
+  logic2: { checkpointType: 'logic', checkpointId: 'L2', checkpointLabel: 'KP GROUND' },
+  puzzle1: { checkpointType: 'puzzle', checkpointId: 'P1', checkpointLabel: 'CCD' },
+  puzzle2: { checkpointType: 'puzzle', checkpointId: 'P2', checkpointLabel: 'CANTEEN MANGALORE' },
+  mystery1: { checkpointType: 'mystery', checkpointId: 'M1', checkpointLabel: 'D BLOCK' },
+  mystery2: { checkpointType: 'mystery', checkpointId: 'M2', checkpointLabel: 'C BLOCK' },
+  activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
+  activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
+  activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
+};
 
 const challengeSeed = [
   {
@@ -662,7 +675,9 @@ function writeAudit(action, detail, actor = 'admin') {
 
 function sessionUser(req) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  return token ? sessions.get(token) : null;
+  const user = token ? sessions.get(token) : null;
+  if (user) user.lastSeenAt = new Date().toISOString();
+  return user;
 }
 
 function requireAuth(req, res, next) {
@@ -969,24 +984,13 @@ app.post('/api/login', (req, res) => {
     return res.json({ token, user: { role: 'admin', username: ADMIN_USERNAME } });
   }
 
-  const organizerAccounts = {
-    coding1: { checkpointType: 'coding', checkpointId: 'C1', checkpointLabel: 'SM BLOCK 310' },
-    coding2: { checkpointType: 'coding', checkpointId: 'C2', checkpointLabel: 'SM BLOCK 311' },
-    logic1: { checkpointType: 'logic', checkpointId: 'L1', checkpointLabel: 'SPORTS COMPLEX' },
-    logic2: { checkpointType: 'logic', checkpointId: 'L2', checkpointLabel: 'KP GROUND' },
-    puzzle1: { checkpointType: 'puzzle', checkpointId: 'P1', checkpointLabel: 'CCD' },
-    puzzle2: { checkpointType: 'puzzle', checkpointId: 'P2', checkpointLabel: 'CANTEEN MANGALORE' },
-    mystery1: { checkpointType: 'mystery', checkpointId: 'M1', checkpointLabel: 'D BLOCK' },
-    mystery2: { checkpointType: 'mystery', checkpointId: 'M2', checkpointLabel: 'C BLOCK' },
-    activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
-    activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
-    activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
-  };
   if (role === 'organizer') {
-    const account = organizerAccounts[username.trim().toLowerCase()];
+    const organizerUsername = username.trim().toLowerCase();
+    const account = ORGANIZER_ACCOUNTS[organizerUsername];
     if (!account || password !== 'events') return res.status(401).json({ error: 'Use a valid organizer account.' });
     const token = crypto.randomBytes(24).toString('hex');
-    sessions.set(token, { role: 'organizer', username: username.trim().toLowerCase(), ...account });
+    const now = new Date().toISOString();
+    sessions.set(token, { role: 'organizer', username: organizerUsername, connectedAt: now, lastSeenAt: now, ...account });
     writeAudit('ORGANIZER CONNECTED', `${account.checkpointLabel} checkpoint console opened`);
     return res.json({ token, user: { role: 'organizer', username: username.trim().toLowerCase(), ...account } });
   }
@@ -1071,6 +1075,39 @@ app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
 
 app.get('/api/admin/teams', requireAuth, requireAdmin, (req, res) => {
   res.json({ teams: [...teams.values()].map(publicTeam) });
+});
+
+app.get('/api/admin/volunteers', requireAuth, requireAdmin, (req, res) => {
+  const now = Date.now();
+  const volunteers = Object.entries(ORGANIZER_ACCOUNTS).map(([username, account]) => {
+    const volunteerSessions = [...sessions.values()]
+      .filter((session) => session.role === 'organizer' && session.username === username);
+    const lastSeenAt = volunteerSessions
+      .map((session) => session.lastSeenAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1) || null;
+    const onlineSessions = volunteerSessions.filter((session) => (
+      session.lastSeenAt && now - new Date(session.lastSeenAt).getTime() <= 15000
+    )).length;
+    const teamsAtCheckpoint = [...teams.values()].filter((team) => {
+      const challenge = getTeamChallenge(team);
+      return team.active && challenge
+        && challenge.type.toLowerCase() === account.checkpointType
+        && challenge.station === account.checkpointLabel;
+    }).length;
+    return {
+      username,
+      checkpointType: account.checkpointType,
+      checkpointId: account.checkpointId,
+      checkpointLabel: account.checkpointLabel,
+      online: onlineSessions > 0,
+      activeSessions: onlineSessions,
+      lastSeenAt,
+      teamsAtCheckpoint,
+    };
+  });
+  res.json({ volunteers });
 });
 
 app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {

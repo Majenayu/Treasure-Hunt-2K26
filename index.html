@@ -1075,7 +1075,7 @@
       $('#closeInstallHelp').addEventListener('click', () => $('#installHelpDialog').close());
       $('#themeToggle').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
       setInstallButtonVisibility();
-     const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
+    const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminVolunteers', '♙', 'Volunteers'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
     const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
     function renderNav() {
@@ -1102,7 +1102,7 @@
        state.lastRenderKey = renderKey;
        $('#view').classList.toggle('animate-in', state.animateView);
       renderNav();
-       $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminTeams: 'Teams & progress', adminProgress: 'Teams & progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
+       $('#pageTitle').textContent = state.role === 'admin' ? ({ adminGame: 'Event control', adminQuestions: 'Question bank', adminCheckpoints: 'Checkpoint locations', adminVolunteers: 'Volunteer tracking', adminTeams: 'Teams & progress', adminProgress: 'Teams & progress', leaderboard: 'Live leaderboard' }[state.view] || 'Mission control') : state.role === 'organizer' ? ({ organizer: 'Checkpoint console', leaderboard: 'Live leaderboard' }[state.view] || 'Checkpoint console') : ({ mission: 'Your mission', teamboard: 'Circuit standings' }[state.view] || 'Your mission');
       try {
         if (state.role === 'admin') await renderAdmin();
         else if (state.role === 'organizer') await renderOrganizer();
@@ -1127,9 +1127,10 @@
         scheduleRender(5000);
       } else if (state.view === 'adminQuestions') await renderQuestions();
       else if (state.view === 'adminCheckpoints') await renderCheckpoints();
+      else if (state.view === 'adminVolunteers') await renderVolunteers();
        else if (state.view === 'adminTeams' || state.view === 'adminProgress') await renderTeams();
       else renderLeaderboard((await api('/api/leaderboard')).leaderboard);
-       if (['adminTeams', 'adminProgress', 'leaderboard'].includes(state.view)) scheduleRender(5000);
+       if (['adminVolunteers', 'adminTeams', 'adminProgress', 'leaderboard'].includes(state.view)) scheduleRender(5000);
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
     }
     function challengeRow(challenge) { return `<div class="challenge-row"><span class="challenge-index">0${challenge.number}</span><div class="challenge-info"><strong>${escapeHtml(challenge.name)}</strong><span>${escapeHtml(challenge.station)} · ${challenge.activeTeams || 0} teams live</span></div><span class="tag">${challenge.type}</span><button class="toggle ${challenge.disabled ? '' : 'on'}" data-challenge="${challenge.number}" title="Toggle station"><i></i></button></div>`; }
@@ -1142,6 +1143,11 @@
          return `<tr><td><div class="team-name">${escapeHtml(team.name)}</div><div class="team-id">${team.id}</div></td><td class="team-progress-cell"><div class="team-progress-label"><span>${team.completed} / ${totalMissions}</span><span>${progress}%</span></div><div class="team-progress-track"><i style="width:${progress}%"></i></div></td><td>${escapeHtml(currentMission)}</td><td class="mono">${team.score} pts</td><td class="status ${team.completedAt ? 'finished' : team.active ? '' : 'ready'}">${team.completedAt ? 'FINISHED' : team.active ? 'ON MISSION' : 'READY'}</td><td><button class="outline reset-team" data-team="${team.id}">Reset</button></td></tr>`;
        }).join('')}</tbody></table></div></section>`;
       document.querySelectorAll('.reset-team').forEach((button) => button.addEventListener('click', async () => { if (confirm(`Reset ${button.dataset.team}?`)) { await api(`/api/admin/teams/${button.dataset.team}/reset`, { method: 'POST' }); showToast('Team progress reset.'); render(); } }));
+    }
+    async function renderVolunteers() {
+      const { volunteers } = await api('/api/admin/volunteers');
+      const connected = volunteers.filter((volunteer) => volunteer.online).length;
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Volunteer tracking</h2><p class="card-subtitle">${connected} of ${volunteers.length} volunteers currently connected · activity updates automatically</p></div><span class="tag">STAFF MONITOR</span></div><div class="table-scroll"><table class="table"><thead><tr><th>Volunteer</th><th>Checkpoint</th><th>Connection</th><th>Teams at station</th><th>Last activity</th></tr></thead><tbody>${volunteers.map((volunteer) => `<tr><td><div class="team-name">${escapeHtml(volunteer.username)}</div><div class="team-id">${escapeHtml(volunteer.checkpointType.toUpperCase())} · ${escapeHtml(volunteer.checkpointId)}</div></td><td>${escapeHtml(volunteer.checkpointLabel)}</td><td><span class="status ${volunteer.online ? '' : 'ready'}">${volunteer.online ? 'CONNECTED' : 'OFFLINE'}${volunteer.activeSessions > 1 ? ` · ${volunteer.activeSessions} sessions` : ''}</span></td><td class="mono">${volunteer.teamsAtCheckpoint}</td><td>${volunteer.lastSeenAt ? escapeHtml(new Date(volunteer.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })) : 'Not connected yet'}</td></tr>`).join('')}</tbody></table></div><p class="card-subtitle" style="margin-top:14px">Passwords are not shown. A volunteer is marked offline after 15 seconds without activity.</p></section>`;
     }
     function renderChallenges(challenges) {
       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Challenge stations</h2><p class="card-subtitle">Disable a station if a physical location needs attention.</p></div><span class="tag">10 STATIONS</span></div><div class="challenge-list">${challenges.map(challengeRow).join('')}</div></section>`;
