@@ -208,6 +208,42 @@
     .riddle-qr span { display: block; color: rgba(180,200,255,.68); font-size: 12px; line-height: 1.5; }
     .riddle-qr code { color: #ff956f; font: 500 12px 'DM Mono'; }
     .toast { position: fixed; right: 24px; bottom: 24px; color: white; background: var(--ink); border-left: 4px solid var(--orange); border-radius: 10px; padding: 13px 16px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; }
+     .theme-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; border: 1px solid rgba(242,106,61,.2); border-radius: 999px; padding: 7px 10px; background: rgba(242,106,61,.08); color: #ffb18e; font: 500 10px 'DM Mono'; letter-spacing: .06em; text-transform: uppercase; transition: transform .2s ease, background .2s ease, border-color .2s ease, color .2s ease; }
+     .theme-toggle:hover { transform: translateY(-1px); background: rgba(242,106,61,.15); border-color: rgba(242,106,61,.45); }
+     .theme-toggle-icon { width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; display: inline-block; position: relative; overflow: hidden; }
+     .theme-toggle-icon:after { content: ''; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: currentColor; top: -4px; left: 5px; }
+     .theme-light .theme-toggle-icon { background: currentColor; }
+     .theme-light .theme-toggle-icon:after { background: var(--paper); top: -3px; left: 5px; }
+     .theme-light .theme-toggle { color: var(--orange-dark); background: var(--orange-soft); border-color: rgba(200,73,37,.22); }
+     .theme-light .theme-toggle:hover { background: #ffe4d8; border-color: rgba(200,73,37,.4); }
+     .team-layout > *, .grid > *, .stats > *, .team-columns > * { animation: surface-rise .55s cubic-bezier(.2,.8,.2,1) both; }
+     .team-layout > :nth-child(2), .grid > :nth-child(2), .team-columns > :nth-child(2) { animation-delay: .08s; }
+     .team-layout > :nth-child(3), .grid > :nth-child(3) { animation-delay: .16s; }
+     .mission { animation: mission-focus .6s cubic-bezier(.2,.8,.2,1) both !important; }
+     .team-hero { animation: hero-arrive .7s cubic-bezier(.2,.8,.2,1) both; }
+     .team-hero:after { animation: orbit-drift 16s ease-in-out infinite alternate; }
+     .progress-track i { animation: progress-glow 2.4s ease-in-out infinite; }
+     .question-card { animation: question-arrive .45s cubic-bezier(.2,.8,.2,1) both; }
+     .question-card:nth-child(2) { animation-delay: .07s; }
+     .question-card:nth-child(3) { animation-delay: .14s; }
+     .challenge-row, .stat, .card, .primary, .outline, .quiz-option, .rank-row { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease; }
+     .challenge-row:hover, .stat:hover { transform: translateY(-2px); }
+     .card:hover { box-shadow: 0 16px 44px rgba(0,0,0,.2); }
+     .live-status .dot { animation: status-pulse 2s ease-in-out infinite; }
+     .timer { animation: timer-breathe 2.2s ease-in-out infinite; }
+     .riddle-qr { animation: qr-arrive .55s cubic-bezier(.2,.8,.2,1) both; }
+     @keyframes surface-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+     @keyframes mission-focus { from { opacity: 0; transform: translateY(16px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+     @keyframes hero-arrive { from { opacity: 0; transform: translateY(-10px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+     @keyframes orbit-drift { from { transform: translate(0, 0) rotate(0deg); } to { transform: translate(-18px, 12px) rotate(8deg); } }
+     @keyframes progress-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.18); } }
+     @keyframes question-arrive { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+     @keyframes status-pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(45,139,104,.12); } 50% { box-shadow: 0 0 0 7px rgba(45,139,104,.04); } }
+     @keyframes timer-breathe { 0%, 100% { box-shadow: 0 0 0 rgba(242,106,61,0); } 50% { box-shadow: 0 0 0 4px rgba(242,106,61,.08); } }
+     @keyframes qr-arrive { from { opacity: 0; transform: scale(.96) rotate(-1deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+     @media (prefers-reduced-motion: reduce) {
+       *, *:before, *:after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+     }
      .admin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
      .admin-actions .timer { white-space: nowrap; }
      .admin-actions .primary, .admin-actions .outline { margin: 0; }
@@ -458,6 +494,113 @@
         max-width: calc(100vw - (var(--mobile-gutter) * 2));
       }
     }
+     /* Warm paper theme. The default remains the high-contrast night circuit. */
+     body.theme-light {
+       --ink: #241a14;
+       --muted: #76685d;
+       --paper: #f7f1e9;
+       --card: #fffdfa;
+       --line: #e6d9cd;
+       --orange-soft: #fff0e8;
+       background: var(--paper);
+       color: var(--ink);
+     }
+     body.theme-light:before { opacity: .2; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(200,73,37,.025) 2px, rgba(200,73,37,.025) 4px); }
+     body.theme-light:after { background: radial-gradient(ellipse, rgba(242,106,61,.09), transparent 70%); }
+     body.theme-light .login-art { background: radial-gradient(circle at 20% 15%, rgba(255,255,255,.16), transparent 38%), #f26a3d; color: #fffaf5; border-right-color: rgba(102,39,20,.16); }
+     body.theme-light .login-art:before { border-color: rgba(255,255,255,.3); }
+     body.theme-light .login-art:after { border-color: rgba(255,255,255,.2); }
+     body.theme-light .login-panel,
+     body.theme-light .app,
+     body.theme-light .content { background: var(--paper); }
+     body.theme-light .login-heading h2,
+     body.theme-light .topbar h1,
+     body.theme-light .card-title,
+     body.theme-light .stat-value,
+     body.theme-light .team-name,
+     body.theme-light .challenge-info strong,
+     body.theme-light .table td,
+     body.theme-light .mission h3 { color: var(--ink); }
+     body.theme-light .login-heading p,
+     body.theme-light .login-note,
+     body.theme-light .card-subtitle,
+     body.theme-light .stat-label,
+     body.theme-light .capacity,
+     body.theme-light .station-type,
+     body.theme-light .team-id,
+     body.theme-light .mission-location,
+     body.theme-light .progress-top,
+     body.theme-light .hero-score span { color: var(--muted); }
+     body.theme-light .tabs { background: #eee4da; border-color: var(--line); }
+     body.theme-light .tab { color: var(--muted); }
+     body.theme-light .tab.active { background: var(--card); color: var(--ink); box-shadow: 0 4px 12px rgba(86,48,24,.1); }
+     body.theme-light .field label,
+     body.theme-light .eyebrow { color: var(--muted); }
+     body.theme-light .field input,
+     body.theme-light .field textarea,
+     body.theme-light .field select,
+     body.theme-light .score-input,
+     body.theme-light .unlock-code { background: var(--card); border-color: var(--line); color: var(--ink); }
+     body.theme-light .field input::placeholder,
+     body.theme-light .field textarea::placeholder { color: #aa9b8d; }
+     body.theme-light .sidebar { background: #fffaf4; color: var(--ink); border-right-color: var(--line); }
+     body.theme-light .sidebar .brand-mark { background: var(--ink); color: var(--orange); }
+     body.theme-light .side-label,
+     body.theme-light .sidebar-bottom small,
+     body.theme-light .logout { color: var(--muted); }
+     body.theme-light .nav button { color: var(--muted); }
+     body.theme-light .nav button:hover,
+     body.theme-light .nav button.active { color: var(--ink); background: rgba(242,106,61,.1); }
+     body.theme-light .nav button.active { box-shadow: inset 3px 0 var(--orange), 0 0 18px rgba(242,106,61,.06); }
+     body.theme-light .sidebar-bottom { border-color: var(--line); }
+     body.theme-light .topbar { background: rgba(247,241,233,.92); border-color: var(--line); }
+     body.theme-light .live-status { background: #eff9f2; border-color: #bddcca; color: var(--green); }
+     body.theme-light .stat,
+     body.theme-light .card,
+     body.theme-light .progress-wrap { background: var(--card); border-color: var(--line); box-shadow: 0 12px 34px rgba(86,48,24,.07); }
+     body.theme-light .stat:after { border-color: var(--orange); }
+     body.theme-light .outline { color: var(--muted); border-color: var(--line); }
+     body.theme-light .outline:hover { background: var(--orange-soft); color: var(--orange-dark); border-color: var(--orange); }
+     body.theme-light .station-row,
+     body.theme-light .challenge-row,
+     body.theme-light .table td,
+     body.theme-light .rank-row,
+     body.theme-light .question-set { border-color: #eee4da; }
+     body.theme-light .bar,
+     body.theme-light .progress-track { background: #eee4da; }
+     body.theme-light .question-card,
+     body.theme-light .quiz-option { background: rgba(255,253,249,.78); border-color: var(--line); }
+     body.theme-light .quiz-option:has(input:checked) { color: var(--ink); background: var(--orange-soft); border-color: var(--orange); }
+     body.theme-light .team-hero { background: radial-gradient(circle at 82% 15%, rgba(242,106,61,.12), transparent 36%), #fffaf4; border-color: rgba(200,73,37,.2); color: var(--ink); box-shadow: 0 16px 42px rgba(86,48,24,.08); }
+     body.theme-light .team-hero:after { border-color: rgba(200,73,37,.22); box-shadow: 0 0 0 44px rgba(242,106,61,.06), 0 0 0 90px rgba(242,106,61,.035); }
+     body.theme-light .team-hero p { color: var(--muted); }
+     body.theme-light .hero-score strong,
+     body.theme-light .stat-value em,
+     body.theme-light .lb-pts,
+     body.theme-light .rank-row span { color: var(--orange-dark); }
+     body.theme-light .tag,
+     body.theme-light .timer { background: var(--orange-soft); color: var(--orange-dark); }
+     body.theme-light .riddle-qr { background: var(--orange-soft); border-color: rgba(200,73,37,.2); }
+     body.theme-light .riddle-qr strong { color: var(--ink); }
+     body.theme-light .riddle-qr span { color: var(--muted); }
+     body.theme-light .riddle-qr code { color: var(--orange-dark); }
+     body.theme-light .toast { background: var(--ink); color: #fff9f3; }
+     body.theme-light .admin-form { background: #f0e8df; border-color: rgba(200,73,37,.16); }
+     body.theme-light .editor-dialog { background: var(--card); color: var(--ink); border-color: var(--line); box-shadow: 0 25px 80px rgba(49,28,15,.25); }
+     body.theme-light .editor-dialog p { color: var(--muted); }
+     body.theme-light .editor-dialog .field input { background: #fffaf4; border-color: var(--line); color: var(--ink); }
+     body.theme-light .error { background: #fff0ee; color: #b53724; border-color: #f3c6be; }
+     body.theme-light .theme-toggle { color: var(--orange-dark); }
+     @media (max-width: 620px) {
+       .theme-toggle { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; }
+       .theme-toggle-label { display: none; }
+       .topbar-actions { gap: 5px; }
+       .live-status { max-width: 108px; overflow: hidden; text-overflow: ellipsis; }
+       .team-hero:after { right: -180px; top: -180px; }
+       .team-columns > .card { min-width: 0; }
+       .riddle-qr { max-width: 100%; }
+       .riddle-qr img { width: 104px; height: 104px; }
+     }
   </style>
 </head>
 <body>
@@ -513,7 +656,7 @@
     <main class="content">
       <header class="topbar">
         <div><div class="page-kicker">CodeHunt / The Orange Circuit</div><h1 id="pageTitle">Mission control</h1></div>
-        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> CIRCUIT LIVE</div><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
+        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> CIRCUIT LIVE</div><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"><span class="theme-toggle-icon" aria-hidden="true"></span><span id="themeToggleLabel" class="theme-toggle-label">Light</span></button><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
       </header>
       <div id="view" class="page"></div>
     </main>
@@ -523,7 +666,7 @@
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-     const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {} };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark' };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -540,6 +683,22 @@
       const value = Math.max(0, Number(seconds) || 0);
       return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
     };
+      function applyTheme(theme) {
+        state.theme = theme === 'light' ? 'light' : 'dark';
+        document.body.classList.toggle('theme-light', state.theme === 'light');
+        localStorage.setItem('codehunt_theme', state.theme);
+        const toggle = $('#themeToggle');
+        const label = $('#themeToggleLabel');
+        const nextTheme = state.theme === 'light' ? 'dark' : 'light';
+        if (toggle) {
+          toggle.setAttribute('aria-label', `Switch to ${nextTheme} theme`);
+          toggle.setAttribute('title', `Switch to ${nextTheme} theme`);
+        }
+        if (label) label.textContent = state.theme === 'light' ? 'Dark' : 'Light';
+        const themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta) themeMeta.setAttribute('content', state.theme === 'light' ? '#f7f1e9' : '#f26a3d');
+      }
+      applyTheme(state.theme);
      const clearScheduledRefresh = () => { clearTimeout(state.refreshTimer); state.refreshTimer = null; };
      const scheduleRender = (delay) => { clearScheduledRefresh(); state.refreshTimer = setTimeout(() => { if (state.token) render(); }, delay); };
      function startEventClock(initialSeconds, status) {
@@ -616,6 +775,7 @@
      const logout = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); };
      $('#logoutBtn').addEventListener('click', logout);
      $('#mobileLogoutBtn').addEventListener('click', logout);
+      $('#themeToggle').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
      const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
     const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
