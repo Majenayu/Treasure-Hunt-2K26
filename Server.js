@@ -502,9 +502,21 @@ app.get('/manifest.json', (req, res) => {
     short_name: 'TechHunt 2026',
     description: 'TechHunt 2026 treasure hunt event app',
     start_url: '/',
+    id: '/',
+    scope: '/',
     display: 'standalone',
+    orientation: 'any',
     background_color: '#f7f3ed',
     theme_color: '#f26a3d',
+    categories: ['games', 'education', 'events'],
+    icons: [
+      {
+        src: '/techhunt-mark.svg',
+        sizes: 'any',
+        type: 'image/svg+xml',
+        purpose: 'any maskable',
+      },
+    ],
   });
 });
 app.get('/favicon.ico', (req, res) => res.status(204).end());

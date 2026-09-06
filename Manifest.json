@@ -3,9 +3,13 @@
   "short_name": "TechHunt 2026",
   "description": "TechHunt 2026 treasure hunt event app",
   "start_url": "/",
+  "id": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#03050f",
   "theme_color": "#f26a3d",
+  "categories": ["games", "education"],
   "icons": [
     {
       "src": "/techhunt-mark.svg",

@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f26a3d">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/techhunt-mark.svg">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="description" content="TechHunt 2026 mission control">
   <title>TechHunt 2026 / Mission Control</title>
@@ -205,6 +206,10 @@
     .mobile-only { display: none; }
     .mobile-logout { display: none; border: 1px solid rgba(242,106,61,.2); background: rgba(242,106,61,.08); color: #ff956f; border-radius: 10px; padding: 7px 9px; font: 500 12px 'DM Mono'; }
     .topbar-actions { display: flex; align-items: center; gap: 8px; }
+    .install-app { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; border: 1px solid rgba(242,106,61,.28); border-radius: 999px; padding: 7px 11px; background: rgba(242,106,61,.12); color: #ffb18e; font: 500 10px 'DM Mono'; letter-spacing: .06em; text-transform: uppercase; transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+    .install-app:hover { transform: translateY(-1px); background: rgba(242,106,61,.2); border-color: rgba(242,106,61,.55); }
+    .login-install { margin: 15px auto 0; display: flex; }
+    .install-icon { font-size: 14px; line-height: 1; }
     .riddle-qr { display: flex; align-items: center; gap: 14px; max-width: 420px; margin: 16px 0 8px; padding: 12px; border: 1px solid rgba(242,106,61,.22); border-radius: 14px; background: rgba(242,106,61,.06); }
     .riddle-qr img { width: 132px; height: 132px; padding: 7px; background: #fff; border-radius: 8px; flex: 0 0 auto; }
     .riddle-qr strong { display: block; color: #eaf0ff; font: 700 14px 'Space Grotesk'; margin-bottom: 6px; }
@@ -618,6 +623,8 @@
      @media (max-width: 620px) {
        .theme-toggle { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; }
        .theme-toggle-label { display: none; }
+      .install-app { width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; }
+      .install-app-label { display: none; }
        .topbar-actions { gap: 5px; }
        .live-status { max-width: 108px; overflow: hidden; text-overflow: ellipsis; }
        .team-hero:after { right: -180px; top: -180px; }
@@ -663,6 +670,7 @@
           <button class="primary wide" type="submit">Enter mission control <span aria-hidden="true">↗</span></button>
         </form>
         <p id="loginNote" class="login-note">Demo admin: <strong>majen / majen</strong></p>
+        <button id="loginInstallApp" class="install-app login-install hidden" type="button"><span class="install-icon" aria-hidden="true">↓</span><span class="install-app-label">Install app</span></button>
       </div>
     </div>
   </section>
@@ -680,7 +688,7 @@
     <main class="content">
       <header class="topbar">
         <div><div class="page-kicker">TechHunt 2026</div><h1 id="pageTitle">Mission control</h1></div>
-        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> EVENT LIVE</div><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"><span class="theme-toggle-icon" aria-hidden="true"></span><span id="themeToggleLabel" class="theme-toggle-label">Light</span></button><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
+        <div class="topbar-actions"><div id="eventStatus" class="live-status"><span class="dot"></span> EVENT LIVE</div><button id="installApp" class="install-app hidden" type="button" aria-label="Install TechHunt app" title="Install TechHunt app"><span class="install-icon" aria-hidden="true">↓</span><span class="install-app-label">Install</span></button><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"><span class="theme-toggle-icon" aria-hidden="true"></span><span id="themeToggleLabel" class="theme-toggle-label">Light</span></button><button id="mobileLogoutBtn" class="mobile-logout" aria-label="Sign out" title="Sign out">↪</button></div>
       </header>
       <div id="view" class="page"></div>
     </main>
@@ -698,11 +706,27 @@
       </div>
     </div>
   </dialog>
+  <dialog id="installHelpDialog" class="final-dialog" aria-labelledby="installHelpTitle">
+    <div class="final-dialog-content">
+      <div class="final-dialog-badge" aria-hidden="true">↓</div>
+      <h2 id="installHelpTitle">Install TechHunt</h2>
+      <p id="installHelpMessage">Add TechHunt to your home screen for quick access during the event.</p>
+      <div class="card-subtitle" style="text-align:left; margin:20px auto; max-width:330px; line-height:1.8">
+        <strong>On iPhone or iPad</strong><br>
+        1. Open this page in Safari.<br>
+        2. Tap <strong>Share</strong>.<br>
+        3. Choose <strong>Add to Home Screen</strong>.
+      </div>
+      <div class="final-dialog-actions">
+        <button id="closeInstallHelp" class="primary" type="button">Got it</button>
+      </div>
+    </div>
+  </dialog>
 
   <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v3').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -790,6 +814,39 @@
         update();
      }
     const showToast = (message) => { $('#toast').textContent = message; $('#toast').classList.remove('hidden'); setTimeout(() => $('#toast').classList.add('hidden'), 3500); };
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const installButtons = () => [$('#installApp'), $('#loginInstallApp')].filter(Boolean);
+    const setInstallButtonVisibility = () => {
+      const canOfferInstall = Boolean(state.deferredInstallPrompt) || (isIos && !isStandalone());
+      installButtons().forEach((button) => button.classList.toggle('hidden', !canOfferInstall));
+    };
+    const showInstallHelp = () => {
+      const dialog = $('#installHelpDialog');
+      if (!dialog.open) dialog.showModal();
+    };
+    const installApp = async () => {
+      if (state.deferredInstallPrompt) {
+        const promptEvent = state.deferredInstallPrompt;
+        state.deferredInstallPrompt = null;
+        promptEvent.prompt();
+        const result = await promptEvent.userChoice;
+        showToast(result.outcome === 'accepted' ? 'TechHunt was added to your home screen.' : 'Install cancelled.');
+        setInstallButtonVisibility();
+        return;
+      }
+      if (isIos) showInstallHelp();
+    };
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      state.deferredInstallPrompt = event;
+      setInstallButtonVisibility();
+    });
+    window.addEventListener('appinstalled', () => {
+      state.deferredInstallPrompt = null;
+      setInstallButtonVisibility();
+      showToast('TechHunt was installed successfully.');
+    });
     function showFinalDialog(team, data, complete) {
       if (state.finalDialogShown) return;
       state.finalDialogShown = true;
@@ -829,7 +886,11 @@
      const logout = async () => { try { await api('/api/logout', { method: 'POST' }); } catch (_) {} localStorage.removeItem('codehunt_token'); state.token = null; location.reload(); };
      $('#logoutBtn').addEventListener('click', logout);
      $('#mobileLogoutBtn').addEventListener('click', logout);
+      $('#installApp').addEventListener('click', installApp);
+      $('#loginInstallApp').addEventListener('click', installApp);
+      $('#closeInstallHelp').addEventListener('click', () => $('#installHelpDialog').close());
       $('#themeToggle').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
+      setInstallButtonVisibility();
      const adminNav = [['adminGame', '⚙', 'Game'], ['adminQuestions', '▤', 'Questions'], ['adminCheckpoints', '⌖', 'Locations'], ['adminTeams', '♧', 'Teams & progress'], ['leaderboard', '↗', 'Leaderboard']];
     const teamNav = [['mission', '⌘', 'My mission'], ['teamboard', '↗', 'Leaderboard']];
     const organizerNav = [['organizer', '⌖', 'Checkpoints'], ['leaderboard', '↗', 'Leaderboard']];
