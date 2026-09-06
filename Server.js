@@ -2018,14 +2018,24 @@ app.post('/api/special/award', requireAuth, requireSpecialVolunteer, (req, res) 
     return res.status(400).json({ error: `Choose one of: ${SURPRISE_POINT_OPTIONS.join(', ')} points.` });
   }
   if (!entry.verifiedAt || !['AWAITING_AWARD', 'ACCEPTED'].includes(entry.status)) {
-    return res.status(409).json({ error: 'Verify the team before awarding bonus points.' });
+    if (entry.status !== 'AWARDED') {
+      return res.status(409).json({ error: 'Verify the team before awarding bonus points.' });
+    }
   }
   if (Date.now() < new Date(round.closesAt).getTime()) {
     return res.status(409).json({ error: 'Wait until the 10-minute Surprise Round window closes before awarding points.' });
   }
-  if (entry.status === 'AWARDED') return res.json({ ok: true, alreadyAwarded: true, points: entry.points });
   const team = teams.get(teamId);
   if (!team) return res.status(404).json({ error: 'Team account not found.' });
+  if (entry.status === 'AWARDED') {
+    const previousPoints = Number(entry.points) || 0;
+    if (previousPoints === points) return res.json({ ok: true, unchanged: true, teamId, points, score: team.score });
+    team.score += points - previousPoints;
+    entry.points = points;
+    entry.editedAt = new Date().toISOString();
+    writeAudit('SURPRISE BONUS EDITED', `${teamId} bonus changed from ${previousPoints} to ${points} points at M510`, req.user.username);
+    return res.json({ ok: true, edited: true, teamId, previousPoints, points, score: team.score });
+  }
   team.score += points;
   entry.points = points;
   entry.status = 'AWARDED';

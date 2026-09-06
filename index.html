@@ -1463,7 +1463,7 @@
           const status = team.status === 'AWAITING_AWARD' ? 'VERIFIED · READY TO AWARD' : team.status.replace('_', ' ');
           const awardOptions = data.pointOptions.map((points) => `<option value="${points}">${points} points</option>`).join('');
           const action = team.status === 'AWARDED'
-            ? `<span class="tag">${team.points} POINTS AWARDED</span>`
+            ? `<div class="score-entry"><select class="special-award-select" data-round="${round.id}" data-team="${team.teamId}" aria-label="Edit bonus points for ${escapeHtml(team.teamName)}">${awardOptions.replace(`value="${team.points}"`, `value="${team.points}" selected`)}</select><button class="outline special-edit" data-round="${round.id}" data-team="${team.teamId}">Edit score</button></div>`
             : canVerify
               ? `<button class="primary special-verify" data-round="${round.id}" data-team="${team.teamId}">Verify team ↗</button>`
               : canAward
@@ -1479,10 +1479,10 @@
         button.disabled = true;
         try { await api('/api/special/verify', { method: 'POST', body: JSON.stringify({ roundId: button.dataset.round, teamId: button.dataset.team }) }); showToast('Team verified at M510.'); render(); } catch (error) { button.disabled = false; showToast(error.message); }
       }));
-      document.querySelectorAll('.special-award').forEach((button) => button.addEventListener('click', async () => {
+      document.querySelectorAll('.special-award, .special-edit').forEach((button) => button.addEventListener('click', async () => {
         const select = document.querySelector(`.special-award-select[data-round="${button.dataset.round}"][data-team="${button.dataset.team}"]`);
         button.disabled = true;
-        try { await api('/api/special/award', { method: 'POST', body: JSON.stringify({ roundId: button.dataset.round, teamId: button.dataset.team, points: select.value }) }); showToast('Surprise bonus added to the team score.'); render(); } catch (error) { button.disabled = false; showToast(error.message); }
+        try { await api('/api/special/award', { method: 'POST', body: JSON.stringify({ roundId: button.dataset.round, teamId: button.dataset.team, points: select.value }) }); showToast(button.classList.contains('special-edit') ? 'Surprise bonus score updated.' : 'Surprise bonus added to the team score.'); render(); } catch (error) { button.disabled = false; showToast(error.message); }
       }));
       scheduleRender(3000);
     }
