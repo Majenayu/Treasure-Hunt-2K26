@@ -222,6 +222,14 @@
     .qr-manual label { color: rgba(180,200,255,.68); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .08em; }
     .qr-manual input { width: 100%; border: 1px solid rgba(242,106,61,.22); border-radius: 9px; padding: 11px; color: #eaf0ff; background: #0d1628; outline: 0; font: 12px 'DM Mono'; text-transform: uppercase; }
     .qr-manual input:focus { border-color: #f26a3d; box-shadow: 0 0 0 3px rgba(242,106,61,.13); }
+    .qr-kit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .qr-kit-card { display: grid; gap: 9px; padding: 14px; border: 1px solid rgba(242,106,61,.2); border-radius: 14px; background: rgba(242,106,61,.045); }
+    .qr-kit-card img { width: 100%; max-width: 180px; aspect-ratio: 1; margin: auto; padding: 8px; border-radius: 8px; background: #fff; }
+    .qr-kit-card strong { color: var(--ink); font: 700 14px 'Space Grotesk'; }
+    .qr-kit-card small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .qr-kit-card code { color: var(--orange-dark); font: 500 12px 'DM Mono'; }
+    @media (max-width: 760px) { .qr-kit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 440px) { .qr-kit-grid { grid-template-columns: 1fr; } }
     .toast { position: fixed; right: 24px; bottom: 24px; color: white; background: var(--ink); border-left: 4px solid var(--orange); border-radius: 10px; padding: 13px 16px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; }
     .event-banner { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid rgba(242,106,61,.28); border-radius: 16px; background: linear-gradient(120deg, rgba(242,106,61,.12), rgba(242,174,67,.08)); }
     .event-banner-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px; color: #fff; background: var(--orange); font: 700 16px 'Space Grotesk'; }
@@ -755,15 +763,32 @@
       </div>
     </div>
   </dialog>
+  <dialog id="qrLockoutDialog" class="final-dialog" aria-labelledby="qrLockoutTitle">
+    <div class="final-dialog-content">
+      <div class="final-dialog-badge" aria-hidden="true">!</div>
+      <h2 id="qrLockoutTitle">Wrong location QR</h2>
+      <p>This QR belongs to another checkpoint. Scanning is paused briefly so teams cannot repeatedly guess codes.</p>
+      <div class="final-dialog-rank"><strong id="qrLockoutSeconds">10</strong><span>SECONDS UNTIL RETRY</span></div>
+      <div class="final-dialog-actions">
+        <button id="closeQrLockout" class="primary" type="button" disabled>Try again when timer ends</button>
+      </div>
+    </div>
+  </dialog>
 
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v3').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Something went wrong.');
+      if (!response.ok) {
+        const error = new Error(data.error || 'Something went wrong.');
+        error.status = response.status;
+        error.code = data.code;
+        error.retryAfterSeconds = data.retryAfterSeconds;
+        throw error;
+      }
       return data;
     };
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
@@ -893,6 +918,28 @@
       }
       state.qrScanInFlight = false;
     };
+    const showQrLockout = (seconds = 10) => {
+      const dialog = $('#qrLockoutDialog');
+      const counter = $('#qrLockoutSeconds');
+      const button = $('#closeQrLockout');
+      clearInterval(state.qrLockoutTimer);
+      let remaining = Math.max(1, Number(seconds) || 10);
+      counter.textContent = remaining;
+      button.disabled = true;
+      button.textContent = 'Try again when timer ends';
+      if (!dialog.open) dialog.showModal();
+      const tick = () => {
+        remaining -= 1;
+        counter.textContent = Math.max(0, remaining);
+        if (remaining <= 0) {
+          clearInterval(state.qrLockoutTimer);
+          state.qrLockoutTimer = null;
+          button.disabled = false;
+          button.textContent = 'Try scanning again ↗';
+        }
+      };
+      state.qrLockoutTimer = setInterval(tick, 1000);
+    };
     const submitStationCode = async (value) => {
       const stationCode = normalizeQrValue(value);
       if (!stationCode) {
@@ -904,7 +951,8 @@
         showToast('Location QR verified. Your next riddle is live.');
         render();
       } catch (error) {
-        showToast(error.message);
+        if (error.code === 'QR_LOCKED' || error.retryAfterSeconds) showQrLockout(error.retryAfterSeconds);
+        else showToast(error.message);
       }
     };
     const openQrScanner = async () => {
@@ -1105,8 +1153,9 @@
        document.querySelectorAll('.delete-question').forEach((button) => button.addEventListener('click', async () => { if (confirm('Remove this question from the route?')) { await api(`/api/admin/questions/${button.dataset.question}`, { method: 'DELETE' }); showToast('Question removed.'); render(); } }));
     }
     async function renderCheckpoints() {
-      const checkpoints = await api('/api/admin/checkpoints');
-       $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Checkpoint locations</h2><p class="card-subtitle">Add new route stops or edit the details teams see at each station.</p></div><span class="tag">ROUTE MAP</span></div><form id="locationForm" class="admin-form location-form"><div class="form-grid"><div class="field"><label>Checkpoint name</label><input name="name" placeholder="New station note" required></div><div class="field"><label>Station label</label><input name="station" placeholder="NORTH HALL" required></div><div class="field"><label>Station code</label><input name="stationCode" placeholder="NORTH-07" required></div><div class="field"><label>Location hint</label><input name="locationHint" placeholder="Building · floor" required></div><div class="field"><label>Checkpoint type</label><select name="type"><option value="ACTIVITY">Activity</option><option value="CODING">Coding</option><option value="LOGIC">Logic</option><option value="PUZZLE">Puzzle</option><option value="RIDDLE">Riddle</option><option value="MYSTERY">Mystery quiz</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Add location ↗</button></div></form><div class="station-list">${checkpoints.map((checkpoint, index) => { const isRiddle = checkpoint.type === 'riddle'; const locationLabel = isRiddle ? 'QR-only · no location or volunteer' : `${checkpoint.label} · ${checkpoint.locationHint}`; return `<div class="station-row"><div><div class="station-name"><span class="mono" style="color:var(--orange)">${String(index + 1).padStart(2, '0')}</span> ${escapeHtml(checkpoint.name)}</div><div class="station-type">${escapeHtml(locationLabel)}</div></div><div><span class="tag">${escapeHtml(checkpoint.type)}</span></div><div class="capacity mono">${escapeHtml(checkpoint.stationCode)}</div><button class="outline edit-location" data-number="${checkpoint.number}">Edit</button></div>`; }).join('')}</div><dialog id="locationEditor" class="editor-dialog"><form id="locationEditForm"><h2>Edit location</h2><p>Update the route details shown to teams and checkpoint volunteers.</p><input type="hidden" name="number"><div class="field"><label>Checkpoint name</label><input name="name" required></div><div class="field"><label>Station label</label><input name="station" required></div><div class="field"><label>Station code</label><input name="stationCode" required></div><div class="field"><label>Location hint</label><input name="locationHint"></div><div class="form-actions"><button type="button" class="outline" id="cancelLocationEdit">Cancel</button><button class="primary" type="submit">Save location</button></div></form></dialog></section>`;
+      const [checkpoints, qrKit] = await Promise.all([api('/api/admin/checkpoints'), api('/api/admin/riddle-qrs')]);
+      const qrKitMarkup = `<section class="card"><div class="card-heading"><div><h2 class="card-title">Physical QR kit</h2><p class="card-subtitle">Download and print one unique QR for each physical riddle pass. Do not show these codes in the team app.</p></div><span class="tag">${qrKit.qrs.length} UNIQUE QRS</span></div>${qrKit.qrs.length ? `<div class="qr-kit-grid">${qrKit.qrs.map((qr) => `<article class="qr-kit-card"><img src="${qr.dataUrl}" alt="${escapeHtml(qr.challengeName)} pass ${qr.pass} QR"><strong>${escapeHtml(qr.challengeName)} · Pass ${qr.pass}/${qr.total}</strong><small>Place at: ${escapeHtml(qr.location || 'the assigned physical location')}</small><code>${escapeHtml(qr.stationCode)}</code><a class="outline" href="${qr.dataUrl}" download="${qr.challengeId}-pass-${qr.pass}.png">Download QR ↗</a></article>`).join('')}</div>` : '<div class="empty-state"><strong>No riddle QR locations yet.</strong><span>Add a Riddle checkpoint to generate its physical QR kit.</span></div>'}</section>`;
+       $('#view').innerHTML = `${qrKitMarkup}<section class="card"><div class="card-heading"><div><h2 class="card-title">Checkpoint locations</h2><p class="card-subtitle">Add new route stops or edit the details teams see at each station.</p></div><span class="tag">ROUTE MAP</span></div><form id="locationForm" class="admin-form location-form"><div class="form-grid"><div class="field"><label>Checkpoint name</label><input name="name" placeholder="New station note" required></div><div class="field"><label>Station label</label><input name="station" placeholder="NORTH HALL" required></div><div class="field"><label>Station code</label><input name="stationCode" placeholder="NORTH-07" required></div><div class="field"><label>Location hint</label><input name="locationHint" placeholder="Building · floor" required></div><div class="field"><label>Checkpoint type</label><select name="type"><option value="ACTIVITY">Activity</option><option value="CODING">Coding</option><option value="LOGIC">Logic</option><option value="PUZZLE">Puzzle</option><option value="RIDDLE">Riddle</option><option value="MYSTERY">Mystery quiz</option></select></div></div><div class="form-actions"><button class="primary" type="submit">Add location ↗</button></div></form><div class="station-list">${checkpoints.map((checkpoint, index) => { const isRiddle = checkpoint.type === 'riddle'; const locationLabel = isRiddle ? 'QR-only · physical QR pass sequence' : `${checkpoint.label} · ${checkpoint.locationHint}`; return `<div class="station-row"><div><div class="station-name"><span class="mono" style="color:var(--orange)">${String(index + 1).padStart(2, '0')}</span> ${escapeHtml(checkpoint.name)}</div><div class="station-type">${escapeHtml(locationLabel)}</div></div><div><span class="tag">${escapeHtml(checkpoint.type)}</span></div><div class="capacity mono">${escapeHtml(checkpoint.stationCode)}</div><button class="outline edit-location" data-number="${checkpoint.number}">Edit</button></div>`; }).join('')}</div><dialog id="locationEditor" class="editor-dialog"><form id="locationEditForm"><h2>Edit location</h2><p>Update the route details shown to teams and checkpoint volunteers.</p><input type="hidden" name="number"><div class="field"><label>Checkpoint name</label><input name="name" required></div><div class="field"><label>Station label</label><input name="station" required></div><div class="field"><label>Station code</label><input name="stationCode" required></div><div class="field"><label>Location hint</label><input name="locationHint"></div><div class="form-actions"><button type="button" class="outline" id="cancelLocationEdit">Cancel</button><button class="primary" type="submit">Save location</button></div></form></dialog></section>`;
        $('#locationForm').addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { await api('/api/admin/checkpoints', { method: 'POST', body: JSON.stringify(Object.fromEntries(form.entries())) }); showToast('Location added to the route.'); render(); } catch (error) { showToast(error.message); } });
        document.querySelectorAll('.edit-location').forEach((button) => button.addEventListener('click', () => {
          const checkpoint = checkpoints.find((item) => String(item.number) === button.dataset.number);
@@ -1296,6 +1345,14 @@
       stopQrScanner();
       $('#qrScannerDialog').close();
       await submitStationCode(code);
+    });
+    $('#qrLockoutDialog').addEventListener('close', () => {
+      clearInterval(state.qrLockoutTimer);
+      state.qrLockoutTimer = null;
+    });
+    $('#closeQrLockout').addEventListener('click', () => {
+      $('#qrLockoutDialog').close();
+      openQrScanner();
     });
     (async () => {
       if (!state.token) return;

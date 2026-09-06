@@ -69,7 +69,8 @@ const challengeSeed = [
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
-    stationCode: 'ECHO-12',
+    stationCode: 'ECHO-12-P1',
+    riddleCodes: ['ECHO-12-P1', 'ECHO-12-P2', 'ECHO-12-P3'],
     location: '',
     color: 'violet',
     timeLimit: 0,
@@ -151,7 +152,8 @@ const challengeSeed = [
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
-    stationCode: 'ROOF-09',
+    stationCode: 'ROOF-09-P1',
+    riddleCodes: ['ROOF-09-P1', 'ROOF-09-P2', 'ROOF-09-P3'],
     location: '',
     color: 'violet',
     timeLimit: 0,
@@ -484,6 +486,7 @@ function createTeam(teamId) {
     startedAt: null,
     startedPauseSeconds: 0,
     completedChallenges: [],
+    qrLockedUntil: 0,
   };
   teams.set(teamId, team);
   return team;
@@ -545,7 +548,7 @@ function requireAdmin(req, res, next) {
 
 function publicChallenge(challenge) {
   if (!challenge) return null;
-  const { answer, questionSets, volunteerCode, ...safeChallenge } = challenge;
+  const { answer, questionSets, volunteerCode, riddleCodes, ...safeChallenge } = challenge;
   if (challenge.type === 'RIDDLE') {
     delete safeChallenge.location;
     delete safeChallenge.station;
@@ -607,6 +610,13 @@ function createAdminChallenge(body = {}) {
     answer: question.answer,
     hint: String(body.hint || 'Ask the mission controller.').trim(),
   };
+  if (type === 'RIDDLE') {
+    challenge.riddleCodes = [
+      challenge.stationCode,
+      `${challenge.stationCode}-P2`,
+      `${challenge.stationCode}-P3`,
+    ];
+  }
   const questionSets = makeQuestionSets(challenge).map((set) => set.map((item, index) => index === 0 ? question : item));
   challengeSeed.push(challenge);
   challenges.set(challenge.id, { ...challenge, questionSets, disabled: false });
@@ -687,6 +697,18 @@ function unlockRiddle(team, challenge) {
   team.startedPauseSeconds = state.totalPausedSeconds;
   team.riddleScanUnlocked[challenge.id] = true;
   writeAudit('RIDDLE SCANNED', `${team.id} unlocked ${challenge.name} pass ${(team.riddleProgress?.[challenge.id] || 0) + 1}`, team.id);
+}
+
+function riddleCodesFor(challenge) {
+  if (!challenge || challenge.type !== 'RIDDLE') return [];
+  return Array.isArray(challenge.riddleCodes) && challenge.riddleCodes.length
+    ? challenge.riddleCodes
+    : [challenge.stationCode];
+}
+
+function currentRiddleCode(team, challenge) {
+  const step = Math.min(team.riddleProgress?.[challenge.id] || 0, riddleCodesFor(challenge).length - 1);
+  return riddleCodesFor(challenge)[Math.max(0, step)] || challenge.stationCode;
 }
 
 function publicTeam(team) {
@@ -1013,8 +1035,12 @@ app.patch('/api/admin/checkpoints/:number', requireAuth, requireAdmin, (req, res
   if (!name || !station || !stationCode || !locationHint) {
     return res.status(400).json({ error: 'Name, station, code, and location are required.' });
   }
-  Object.assign(challenge, { name, station, stationCode, location: locationHint });
-  Object.assign(stored, { name, station, stationCode, location: locationHint });
+  const updates = { name, station, stationCode, location: locationHint };
+  if (challenge.type === 'RIDDLE') {
+    updates.riddleCodes = [stationCode, `${stationCode}-P2`, `${stationCode}-P3`];
+  }
+  Object.assign(challenge, updates);
+  Object.assign(stored, updates);
   writeAudit('LOCATION UPDATED', `${challenge.name} · ${challenge.location}`);
   res.json({ ok: true, checkpoint: { id: challenge.id, number: challenge.number, label: challenge.station, name: challenge.name, locationHint: challenge.location, stationCode: challenge.stationCode, type: challenge.type.toLowerCase() } });
 });
@@ -1136,6 +1162,7 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.currentChallenge = null;
   team.startedAt = null;
   team.startedPauseSeconds = 0;
+  team.qrLockedUntil = 0;
   team.completedChallenges = [];
   team.questionAssignments = {};
   team.riddleProgress = {};
@@ -1158,15 +1185,41 @@ app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
   const challenge = challenges.get(req.params.id);
   if (!challenge || challenge.type !== 'RIDDLE') return res.status(404).json({ error: 'Riddle QR not found.' });
+  const team = teams.get(req.user.teamId);
+  const step = Math.max(0, Math.min(Number(req.query.step || 1) - 1, riddleCodesFor(challenge).length - 1));
+  const stationCode = riddleCodesFor(challenge)[step] || challenge.stationCode;
   try {
-    const dataUrl = await QRCode.toDataURL(challenge.stationCode, {
+    const dataUrl = await QRCode.toDataURL(stationCode, {
       errorCorrectionLevel: 'M',
       margin: 2,
       width: 220,
     });
-    res.json({ stationCode: challenge.stationCode, dataUrl });
+    res.json({ stationCode, step: step + 1, dataUrl, current: Boolean(team && getTeamChallenge(team)?.id === challenge.id) });
   } catch (_) {
     res.status(500).json({ error: 'Unable to prepare the riddle QR.' });
+  }
+});
+
+app.get('/api/admin/riddle-qrs', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const qrs = [];
+    for (const seed of challengeSeed.filter((challenge) => challenge.type === 'RIDDLE')) {
+      const challenge = challenges.get(seed.id) || seed;
+      for (const [index, stationCode] of riddleCodesFor(challenge).entries()) {
+        qrs.push({
+          challengeId: challenge.id,
+          challengeName: challenge.name,
+          location: challenge.location || 'Physical riddle location',
+          pass: index + 1,
+          total: riddleCodesFor(challenge).length,
+          stationCode,
+          dataUrl: await QRCode.toDataURL(stationCode, { errorCorrectionLevel: 'M', margin: 2, width: 300 }),
+        });
+      }
+    }
+    res.json({ qrs });
+  } catch (_) {
+    res.status(500).json({ error: 'Unable to prepare the physical QR kit.' });
   }
 });
 
@@ -1180,10 +1233,25 @@ app.post('/api/team/start', requireAuth, (req, res) => {
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
   if (challenge.disabled) return res.status(409).json({ error: 'This station is temporarily offline.' });
   if (challenge.type === 'RIDDLE') {
-    if (team.riddleScanUnlocked?.[challenge.id]) return res.json({ ok: true, team: publicTeam(team) });
-    if ((req.body.stationCode || '').trim().toUpperCase() !== challenge.stationCode) {
-      return res.status(400).json({ error: 'Wrong QR code. Scan the riddle QR at this checkpoint.' });
+    const remainingLock = Math.ceil(Math.max(0, (team.qrLockedUntil || 0) - Date.now()) / 1000);
+    if (remainingLock > 0) {
+      return res.status(429).json({
+        error: `Wrong-location lockout is active. Try again in ${remainingLock} seconds.`,
+        code: 'QR_LOCKED',
+        retryAfterSeconds: remainingLock,
+      });
     }
+    if (team.riddleScanUnlocked?.[challenge.id]) return res.json({ ok: true, team: publicTeam(team) });
+    if ((req.body.stationCode || '').trim().toUpperCase() !== currentRiddleCode(team, challenge)) {
+      team.qrLockedUntil = Date.now() + 10000;
+      writeAudit('WRONG RIDDLE QR', `${team.id} scanned the wrong physical QR at ${challenge.name}`, team.id);
+      return res.status(429).json({
+        error: 'Wrong location QR. Scanner locked for 10 seconds.',
+        code: 'QR_LOCKED',
+        retryAfterSeconds: 10,
+      });
+    }
+    team.qrLockedUntil = 0;
     unlockRiddle(team, challenge);
     return res.json({ ok: true, team: publicTeam(team) });
   }
