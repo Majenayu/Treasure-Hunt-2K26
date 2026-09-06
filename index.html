@@ -824,7 +824,7 @@
   </dialog>
 
   <script>
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v4').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v5').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
       const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, routeTimer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null, surpriseRound: null, surpriseTimer: null, lastSurpriseResponseAt: 0, lastSurpriseAlertId: null };
     const api = async (url, options = {}) => {
