@@ -69,8 +69,12 @@ const challengeSeed = [
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
-    stationCode: 'ECHO-12-P1',
-    riddleCodes: ['ECHO-12-P1', 'ECHO-12-P2', 'ECHO-12-P3'],
+    stationCode: 'TH26-Q7M4-K9ZT-2X8P',
+    riddleCodes: [
+      'TH26-Q7M4-K9ZT-2X8P',
+      'TH26-V6RD-N3WY-8K5C',
+      'TH26-H2LF-7PQA-9M6V',
+    ],
     location: '',
     color: 'violet',
     timeLimit: 0,
@@ -152,8 +156,12 @@ const challengeSeed = [
     type: 'RIDDLE',
     icon: '?',
     station: 'RIDDLE QR',
-    stationCode: 'ROOF-09-P1',
-    riddleCodes: ['ROOF-09-P1', 'ROOF-09-P2', 'ROOF-09-P3'],
+    stationCode: 'TH26-B8RX-4NJC-6TWP',
+    riddleCodes: [
+      'TH26-B8RX-4NJC-6TWP',
+      'TH26-Z5KD-9HQL-3V7M',
+      'TH26-F4YS-8CNP-2R6X',
+    ],
     location: '',
     color: 'violet',
     timeLimit: 0,
@@ -552,6 +560,7 @@ function publicChallenge(challenge) {
   if (challenge.type === 'RIDDLE') {
     delete safeChallenge.location;
     delete safeChallenge.station;
+    delete safeChallenge.stationCode;
   }
   return safeChallenge;
 }
@@ -1179,25 +1188,6 @@ app.get('/api/team/state', requireAuth, (req, res) => {
   const board = leaderboard();
   const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
   res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), teamRank, event: state });
-});
-
-app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {
-  if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
-  const challenge = challenges.get(req.params.id);
-  if (!challenge || challenge.type !== 'RIDDLE') return res.status(404).json({ error: 'Riddle QR not found.' });
-  const team = teams.get(req.user.teamId);
-  const step = Math.max(0, Math.min(Number(req.query.step || 1) - 1, riddleCodesFor(challenge).length - 1));
-  const stationCode = riddleCodesFor(challenge)[step] || challenge.stationCode;
-  try {
-    const dataUrl = await QRCode.toDataURL(stationCode, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 220,
-    });
-    res.json({ stationCode, step: step + 1, dataUrl, current: Boolean(team && getTeamChallenge(team)?.id === challenge.id) });
-  } catch (_) {
-    res.status(500).json({ error: 'Unable to prepare the riddle QR.' });
-  }
 });
 
 app.get('/api/admin/riddle-qrs', requireAuth, requireAdmin, async (req, res) => {
