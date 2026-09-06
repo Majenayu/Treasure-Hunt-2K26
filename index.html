@@ -825,7 +825,18 @@
       }
       applyTheme(state.theme);
      const clearScheduledRefresh = () => { clearTimeout(state.refreshTimer); state.refreshTimer = null; };
-     const scheduleRender = (delay) => { clearScheduledRefresh(); state.refreshTimer = setTimeout(() => { if (state.token) render(); }, delay); };
+     const scheduleRender = (delay) => {
+       clearScheduledRefresh();
+       const refresh = () => {
+         if (!state.token) return;
+         if (state.role === 'organizer' && document.activeElement?.matches('.score-input')) {
+           state.refreshTimer = setTimeout(refresh, delay);
+           return;
+         }
+         render();
+       };
+       state.refreshTimer = setTimeout(refresh, delay);
+     };
      function startEventClock(initialSeconds, status) {
        clearTimeout(state.clockTimer);
        const startedAt = Date.now();
