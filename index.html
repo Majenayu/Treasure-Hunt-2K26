@@ -1111,7 +1111,7 @@
         $('#startEvent').addEventListener('click', async () => { await api('/api/admin/start-event', { method: 'POST' }); showToast('Event started.'); render(); });
         $('#eventToggle').addEventListener('click', async () => { await api('/api/admin/event', { method: 'POST' }); showToast(data.event.status === 'LIVE' ? 'Event paused.' : 'Event resumed.'); render(); });
         $('#endEvent').addEventListener('click', async () => { if (confirm('End the event now? Teams will see the final standings and cannot continue.')) { await api('/api/admin/end-event', { method: 'POST' }); showToast('Event ended. Final standings are ready.'); render(); } });
-        $('#resetEvent').addEventListener('click', async () => { if (confirm('Reset the whole event? All team scores and progress will be cleared.')) { await api('/api/admin/reset-event', { method: 'POST' }); showToast('Event reset.'); render(); } });
+        $('#resetEvent').addEventListener('click', async () => { if (confirm('Reset the whole event? This will permanently delete every team account, score, and progress record. Event settings, questions, QR codes, and volunteer accounts will remain.')) { const result = await api('/api/admin/reset-event', { method: 'POST' }); showToast(`Event reset. ${result.deletedTeams} team account${result.deletedTeams === 1 ? '' : 's'} deleted.`); render(); } });
         startEventClock(data.eventElapsedSeconds, data.event.status);
         scheduleRender(5000);
       } else if (state.view === 'adminQuestions') await renderQuestions();

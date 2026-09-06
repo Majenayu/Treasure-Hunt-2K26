@@ -1266,16 +1266,10 @@ app.post('/api/admin/end-event', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
-  for (const team of teams.values()) {
-    team.currentIndex = 0; team.score = 0; team.attempts = 0; team.totalSeconds = 0;
-    team.active = false; team.completedAt = null; team.currentChallenge = null;
-    team.startedAt = null; team.completedChallenges = [];
-    team.questionAssignments = {};
-    team.riddleProgress = {};
-    team.riddleScanUnlocked = {};
-    team.startedPauseSeconds = 0;
-    team.mysteryProgress = {};
-    team.mysteryCorrect = {};
+  const deletedTeams = teams.size;
+  teams.clear();
+  for (const [token, session] of sessions.entries()) {
+    if (session.role === 'team') sessions.delete(token);
   }
   state.status = 'NOT_STARTED';
   state.startedAt = null;
@@ -1283,8 +1277,8 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
   state.elapsedSeconds = 0;
   state.totalPausedSeconds = 0;
   state.pauseStartedAt = null;
-  writeAudit('EVENT RESET', 'All team progress was cleared');
-  res.json({ ok: true });
+  writeAudit('EVENT RESET', `All ${deletedTeams} team accounts and progress were deleted`);
+  res.json({ ok: true, deletedTeams });
 });
 
 app.post('/api/admin/toggle-round', requireAuth, requireAdmin, (req, res) => {
