@@ -1816,7 +1816,6 @@ app.post('/api/team/start', requireAuth, (req, res) => {
         retryAfterSeconds: remainingLock,
       });
     }
-    if (team.riddleScanUnlocked?.[challenge.id]) return res.json({ ok: true, team: publicTeam(team) });
     if ((req.body.stationCode || '').trim().toUpperCase() !== currentRiddleCode(team, challenge)) {
       team.qrLockedUntil = Date.now() + 10000;
       writeAudit('WRONG RIDDLE QR', `${team.id} scanned the wrong physical QR at ${challenge.name}`, team.id);
