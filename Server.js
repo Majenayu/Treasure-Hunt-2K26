@@ -68,19 +68,20 @@ const challengeSeed = [
     name: 'Riddle 1',
     type: 'RIDDLE',
     icon: '?',
-    station: 'RIDDLE QR',
+    station: 'RIDDLE 1',
     stationCode: 'TH26-Q7M4-K9ZT-2X8P',
     riddleCodes: [
       'TH26-Q7M4-K9ZT-2X8P',
       'TH26-V6RD-N3WY-8K5C',
       'TH26-H2LF-7PQA-9M6V',
     ],
-    location: '',
+    riddleLocations: ['Library', 'Basketball Court', 'Sports Complex'],
+    location: 'Library → Basketball Court → Sports Complex',
     color: 'violet',
     timeLimit: 0,
     points: 100,
-    prompt: 'I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?',
-    answer: 'echo',
+    prompt: 'I am the quietest place where knowledge speaks the loudest. Pages surround me, but none of them make a sound. If you seek answers, you may find me before you find them. Where am I?',
+    answer: 'library',
     hint: 'You may hear it come back to you.',
   },
   {
@@ -155,19 +156,20 @@ const challengeSeed = [
     name: 'Riddle 2',
     type: 'RIDDLE',
     icon: '?',
-    station: 'RIDDLE QR',
+    station: 'RIDDLE 2',
     stationCode: 'TH26-B8RX-4NJC-6TWP',
     riddleCodes: [
       'TH26-B8RX-4NJC-6TWP',
       'TH26-Z5KD-9HQL-3V7M',
       'TH26-F4YS-8CNP-2R6X',
     ],
-    location: '',
+    riddleLocations: ['Placement and Training', 'Main Gate', 'CCD'],
+    location: 'Placement and Training → Main Gate → CCD',
     color: 'violet',
     timeLimit: 0,
     points: 100,
-    prompt: 'I have a neck but no head. What am I?',
-    answer: 'bottle',
+    prompt: 'No books are needed to enter me, but teamwork is the key. I have a hoop above the ground, and bouncing balls are my daily sound. Where am I?',
+    answer: 'basketball court',
     hint: 'It can hold a drink.',
   },
   {
@@ -298,12 +300,12 @@ const PUZZLE_QUESTIONS = [
   ['What has an eye but cannot see and is used for sewing?', 'needle'],
 ].map(([prompt, answer]) => ({ prompt, answer }));
 const RIDDLE_QUESTIONS = [
-  { prompt: 'I have hands but cannot clap. What am I?', answer: 'clock' },
-  { prompt: 'I get wetter the more I dry. What am I?', answer: 'towel' },
-  { prompt: 'I have one eye but cannot see. What am I?', answer: 'needle' },
-  { prompt: 'I have a neck but no head. What am I?', answer: 'bottle' },
-  { prompt: 'I can be cracked, made, told, and played. What am I?', answer: 'joke' },
-  { prompt: 'I have cities but no houses and rivers but no water. What am I?', answer: 'map' },
+  { prompt: 'I am the quietest place where knowledge speaks the loudest. Pages surround me, but none of them make a sound. If you seek answers, you may find me before you find them. Where am I?', answer: 'library' },
+  { prompt: 'No books are needed to enter me, but teamwork is the key. I have a hoop above the ground, and bouncing balls are my daily sound. Where am I?', answer: 'basketball court' },
+  { prompt: 'No books. No code. No lectures. Yet I teach discipline. No marks. No grades. Yet I create champions. Find the place where the body writes its own answers.', answer: 'sports complex' },
+  { prompt: 'Classes prepare you for exams, but I prepare you for something beyond. Companies come looking for talent, and students come looking for their future. Where am I?', answer: 'placement and training' },
+  { prompt: 'Before you meet your friends, before you find your classroom, before the first attendance of the day, you must pass through me. Where am I?', answer: 'main gate' },
+  { prompt: 'Three letters identify me, and coffee is often the reason. Between classes, friends gather here for conversations instead of lessons. If your lecture is boring, you know exactly where to go. Where am I?', answer: 'ccd' },
 ];
 const MYSTERY_QUIZ_SETS = [
   [
@@ -454,6 +456,30 @@ function makeQuestionSets(challenge) {
   ));
 }
 
+const RIDDLE_LOCATIONS = {
+  'riddle-01': ['Library', 'Basketball Court', 'Sports Complex'],
+  'riddle-02': ['Placement and Training', 'Main Gate', 'CCD'],
+};
+
+function syncRiddleDefinitions() {
+  for (const [challengeId, locations] of Object.entries(RIDDLE_LOCATIONS)) {
+    const seed = challengeSeed.find((challenge) => challenge.id === challengeId);
+    const stored = challenges.get(challengeId);
+    if (!seed || !stored) continue;
+    const start = seed.number < 9 ? 0 : 3;
+    const prompts = RIDDLE_QUESTIONS.slice(start, start + 3);
+    Object.assign(seed, {
+      station: challengeId === 'riddle-01' ? 'RIDDLE 1' : 'RIDDLE 2',
+      riddleLocations: locations,
+      location: locations.join(' → '),
+      prompt: prompts[0]?.prompt || seed.prompt,
+      answer: prompts[0]?.answer || seed.answer,
+    });
+    const disabled = stored.disabled;
+    Object.assign(stored, seed, { questionSets: [prompts], disabled });
+  }
+}
+
 const baseRoute = challengeSeed.map((challenge) => challenge.id);
 const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false }]));
 const teams = new Map();
@@ -524,6 +550,7 @@ function createTeam(teamId, teamName, password) {
     questionAssignments: {},
     mysteryProgress: {},
     mysteryCorrect: {},
+    riddleScores: {},
     riddleProgress: {},
     riddleScanUnlocked: {},
     startedAt: null,
@@ -554,6 +581,7 @@ function hydrateSnapshot(snapshot) {
   baseRoute.splice(0, baseRoute.length, ...challengeSeed.map((challenge) => challenge.id));
   challenges.clear();
   for (const [id, challenge] of snapshot.challenges || []) challenges.set(id, challenge);
+  syncRiddleDefinitions();
   teams.clear();
   for (const [id, team] of snapshot.teams || []) teams.set(id, team);
   auditLog.splice(0, auditLog.length, ...(snapshot.auditLog || []).slice(0, 30));
@@ -652,7 +680,7 @@ function requireAdmin(req, res, next) {
 
 function publicChallenge(challenge) {
   if (!challenge) return null;
-  const { answer, questionSets, volunteerCode, riddleCodes, ...safeChallenge } = challenge;
+  const { answer, questionSets, volunteerCode, riddleCodes, riddleLocations, ...safeChallenge } = challenge;
   if (challenge.type === 'RIDDLE') {
     delete safeChallenge.location;
     delete safeChallenge.station;
@@ -951,6 +979,8 @@ app.post('/api/login', (req, res) => {
     puzzle2: { checkpointType: 'puzzle', checkpointId: 'P2', checkpointLabel: 'CANTEEN MANGALORE' },
     mystery1: { checkpointType: 'mystery', checkpointId: 'M1', checkpointLabel: 'D BLOCK' },
     mystery2: { checkpointType: 'mystery', checkpointId: 'M2', checkpointLabel: 'C BLOCK' },
+    riddle1: { checkpointType: 'riddle', checkpointId: 'R1', checkpointLabel: 'RIDDLE 1' },
+    riddle2: { checkpointType: 'riddle', checkpointId: 'R2', checkpointLabel: 'RIDDLE 2' },
     activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
     activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
     activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
@@ -1249,6 +1279,7 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.startedPauseSeconds = 0;
     team.mysteryProgress = {};
     team.mysteryCorrect = {};
+    team.riddleScores = {};
   }
   state.status = 'NOT_STARTED';
   state.startedAt = null;
@@ -1307,6 +1338,7 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
   team.riddleScanUnlocked = {};
   team.mysteryProgress = {};
   team.mysteryCorrect = {};
+  team.riddleScores = {};
   writeAudit('TEAM RESET', `${team.id} progress cleared`);
   res.json({ ok: true, team: publicTeam(team) });
 });
@@ -1328,7 +1360,7 @@ app.get('/api/admin/riddle-qrs', requireAuth, requireAdmin, async (req, res) => 
         qrs.push({
           challengeId: challenge.id,
           challengeName: challenge.name,
-          location: challenge.location || 'Physical riddle location',
+          location: challenge.riddleLocations?.[index] || challenge.location || 'Physical riddle location',
           pass: index + 1,
           total: riddleCodesFor(challenge).length,
           stationCode,
@@ -1419,8 +1451,8 @@ app.post('/api/organizer/score', requireAuth, (req, res) => {
   const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
   if (!team) return res.status(404).json({ error: 'Team not found.' });
   const challenge = getTeamChallenge(team);
-  if (!challenge || !['PUZZLE', 'LOGIC'].includes(challenge.type) || team.currentChallenge !== challenge.id || !team.startedAt) {
-    return res.status(409).json({ error: 'Verify this team before recording a Logic or Puzzle score.' });
+  if (!challenge || !['PUZZLE', 'LOGIC', 'RIDDLE'].includes(challenge.type) || team.currentChallenge !== challenge.id || !team.startedAt) {
+    return res.status(409).json({ error: 'Unlock this team before recording a Logic, Puzzle, or Riddle score.' });
   }
   if (req.user.checkpointType && req.user.checkpointType !== challenge.type.toLowerCase()) {
     return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
@@ -1429,13 +1461,35 @@ app.post('/api/organizer/score', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'This team is assigned to another location.' });
   }
   const scoreText = String(req.body.score ?? '').trim();
-  const match = scoreText.match(/^(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(\d+(?:\.\d+)?)?$/i);
-  const score = Number(match ? match[1] : scoreText);
-  const maxScore = Number(req.body.maxScore || (match && match[2]) || 10);
-  if (!Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0 || score < 0 || score > maxScore) {
-    return res.status(400).json({ error: 'Enter a score from 0 to the maximum, such as 6/10.' });
+  const score = Number(scoreText);
+  const maxScore = 10;
+  if (!/^\d+(?:\.\d+)?$/.test(scoreText) || !Number.isFinite(score) || score < 0 || score > maxScore) {
+    return res.status(400).json({ error: 'Enter one number from 0 to 10.' });
   }
   const elapsed = secondsOnMission(team);
+  if (challenge.type === 'RIDDLE') {
+    const step = team.riddleProgress?.[challenge.id] || 0;
+    const total = challenge.questionSets[0]?.length || 3;
+    team.riddleScores = team.riddleScores || {};
+    const scores = Array.isArray(team.riddleScores?.[challenge.id]) ? team.riddleScores[challenge.id] : [];
+    scores[step] = score;
+    team.riddleScores[challenge.id] = scores;
+    if (step + 1 < total) {
+      team.riddleProgress[challenge.id] = step + 1;
+      team.riddleScanUnlocked[challenge.id] = false;
+      team.currentChallenge = null;
+      team.startedAt = null;
+      team.startedPauseSeconds = 0;
+      team.attempts = 0;
+      writeAudit('RIDDLE SCORED', `${team.id} scored ${score}/10 at ${challenge.riddleLocations?.[step] || challenge.station}`, req.user.username);
+      return res.json({ ok: true, score, maxScore, riddleAdvanced: true, riddleStep: step + 2, riddleTotal: total, team: publicTeam(team) });
+    }
+    const totalScore = scores.reduce((sum, value) => sum + Number(value || 0), 0);
+    const earnedPoints = Math.round((totalScore / (total * maxScore)) * challenge.points);
+    completeChallenge(team, challenge, elapsed, earnedPoints);
+    writeAudit('RIDDLE COMPLETED', `${team.id} scored ${totalScore}/${total * maxScore} across ${challenge.name}`, req.user.username);
+    return res.json({ ok: true, score, maxScore, totalScore, totalMaxScore: total * maxScore, earnedPoints, team: publicTeam(team) });
+  }
   const earnedPoints = Math.round((score / maxScore) * challenge.points);
   completeChallenge(team, challenge, elapsed, earnedPoints);
   writeAudit('MISSION SCORED', `${team.id} scored ${score}/${maxScore} at ${challenge.station}`, req.user.username);
@@ -1456,8 +1510,11 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
   const timedOut = challenge.timeLimit > 0 && elapsed > challenge.timeLimit;
   const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [req.body.answer];
   const expectedQuestions = assignedQuestions(team, challenge);
-  if (challenge.type === 'RIDDLE' && !team.riddleScanUnlocked?.[challenge.id]) {
-    return res.status(409).json({ error: 'Scan the QR code to unlock this riddle pass.' });
+  if (challenge.type === 'RIDDLE') {
+    if (!team.riddleScanUnlocked?.[challenge.id]) {
+      return res.status(409).json({ error: 'Scan the QR code to unlock this riddle pass.' });
+    }
+    return res.status(409).json({ error: 'A location volunteer records the score for this riddle.' });
   }
   if (challenge.type === 'MYSTERY') {
     const answer = String(submittedAnswers[0] || '').trim();
@@ -1511,7 +1568,7 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
 app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
   if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
   const station = req.user.checkpointLabel;
-  const rows = [...teams.values()]
+       const rows = [...teams.values()]
     .filter((team) => {
       const challenge = getTeamChallenge(team);
       return team.active && challenge
