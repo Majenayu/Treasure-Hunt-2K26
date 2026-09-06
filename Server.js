@@ -211,44 +211,54 @@ const LOGIC_SET_COUNT = 2;
 const PUZZLE_SET_COUNT = 6;
 const CODING_QUESTIONS = [
   {
-    prompt: 'Q1 — The Missing Identification Number\nInput: 1 2 3 4 5 7 8 9 10\nOutput: 6\nWrite the program described and enter the output for the supplied input.',
+    prompt: 'Q1 — The Missing Identification Number\nInput: 1 2 3 4 5 7 8 9 10\nWrite the program described and enter the output for the supplied input.',
     answer: '6',
+    answerFormat: 'X',
   },
   {
-    prompt: 'Q2 — The Final Champion\nInput: 45 82 61\nOutput: 82\nFind and enter the highest score.',
+    prompt: 'Q2 — The Final Champion\nInput: 45 82 61\nFind and enter the highest score.',
     answer: '82',
+    answerFormat: 'X',
   },
   {
-    prompt: 'Q3 — The Selective Attendance Register\nInput: 7 11 24 35 42 51 68 73\nOutput: 24 42 68\nEnter the even values in their original order.',
-    answer: '24 42 68',
+    prompt: 'Q3 — The Selective Attendance Register\nInput: 7 11 24 35 42 51 68 73\nEnter the even values in their original order.',
+    answer: '24, 42, 68',
+    answerFormat: 'X, X, X',
   },
   {
-    prompt: 'Q4 — The Lost Registration Number\nInput: 5 10 25 17 42 31 42\nOutput: 3\nEnter the first index where the requested value is found.',
+    prompt: 'Q4 — The Lost Registration Number\nInput: 5 10 25 17 42 31 42\nEnter the first index where the requested value is found.',
     answer: '3',
+    answerFormat: 'X',
   },
   {
-    prompt: 'Q5 — The Classroom Matrix\nInput: 2 3 10 20 30 5 15 25\nOutput: 105\nEnter the sum of all values in the matrix.',
+    prompt: 'Q5 — The Classroom Matrix\nInput: 2 3 10 20 30 5 15 25\nEnter the sum of all values in the matrix.',
     answer: '105',
+    answerFormat: 'X',
   },
   {
-    prompt: 'Q6 — The Duplicate Identity Check\nInput: RAHUL RAHUL\nOutput: MATCH\nEnter the result of comparing the two strings.',
+    prompt: 'Q6 — The Duplicate Identity Check\nInput: RAHUL RAHUL\nEnter the result of comparing the two strings.',
     answer: 'MATCH',
+    answerFormat: 'TEXT',
   },
   {
-    prompt: 'Q7 — The Modular Scoring Machine\nInput: 24 18\nOutput: 42\nEnter the value returned by the addition function.',
+    prompt: 'Q7 — The Modular Scoring Machine\nInput: 24 18\nEnter the value returned by the addition function.',
     answer: '42',
+    answerFormat: 'X',
   },
   {
-    prompt: 'Q8 — The Exchange Without Losing the Originals\nInput: 10 25\nOutput: 25 10\nEnter the two values after the pointer-based swap.',
-    answer: '25 10',
+    prompt: 'Q8 — The Exchange Without Losing the Originals\nInput: 10 25\nEnter the two values after the pointer-based swap.',
+    answer: '25, 10',
+    answerFormat: 'X, X',
   },
   {
-    prompt: 'Q9 — The Complete Student Profile\nInput: 101 Arun CSE 45000\nOutput: 101 Arun CSE 45000\nEnter the formatted student record.',
-    answer: '101 Arun CSE 45000',
+    prompt: 'Q9 — The Complete Student Profile\nInput: 101 Arun CSE 45000\nEnter the formatted student record.',
+    answer: '101, Arun, CSE, 45000',
+    answerFormat: 'X, X, X, X',
   },
   {
-    prompt: 'Q10 — The Symmetric Access Passcode\nInput: RADAR\nOutput: PALINDROME\nEnter the palindrome check result.',
+    prompt: 'Q10 — The Symmetric Access Passcode\nInput: RADAR\nEnter the palindrome check result.',
     answer: 'PALINDROME',
+    answerFormat: 'TEXT',
   },
 ];
 const LOGIC_QUESTIONS = [
@@ -854,6 +864,14 @@ function publicQuestion(question) {
   if (!question) return null;
   const { answer, ...safeQuestion } = question;
   return safeQuestion;
+}
+
+function comparableAnswer(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s*,\s*/g, ',')
+    .replace(/\s+/g, ' ');
 }
 
 function questionOptions(value) {
@@ -1706,7 +1724,7 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
     return res.json({ ok: true, correct: false, timedOut: true, completed: true, earnedPoints, score: team.score, team: publicTeam(team) });
   }
   const correctAnswers = expectedQuestions.reduce((count, question, index) => (
-    count + (String(submittedAnswers[index] || '').trim().toLowerCase() === question.answer.toLowerCase() ? 1 : 0)
+    count + (comparableAnswer(submittedAnswers[index]) === comparableAnswer(question.answer) ? 1 : 0)
   ), 0);
   const correct = !timedOut
     && submittedAnswers.length === expectedQuestions.length && correctAnswers === expectedQuestions.length;

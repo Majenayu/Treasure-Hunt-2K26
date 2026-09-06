@@ -1279,7 +1279,10 @@
              : challenge.type === 'MYSTERY'
                ? `Quiz question ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}`
                : `Question ${index + 1}`;
-         return `<div class="question-card"><div class="question-number">${questionLabel}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerControl}</div>`;
+          const answerFormat = question.answerFormat
+            ? `<p class="card-subtitle answer-format">Answer format: <span class="mono">${escapeHtml(question.answerFormat)}</span></p>`
+            : '';
+          return `<div class="question-card"><div class="question-number">${questionLabel}</div><p class="mission-prompt">${escapeHtml(question.prompt)}</p>${answerFormat}${answerControl}</div>`;
       }).join('');
         const roundLabel = challenge?.quizRound
           ? `QUIZ SET ${challenge.quizRound}${team.missionStarted ? ` · QUESTION ${challenge.quizQuestion || 1} / ${challenge.quizTotal || 20}` : ''}`
