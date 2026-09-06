@@ -31,7 +31,7 @@ For `codehuntv2`, `codehuntv3`, and any additional Render service:
 4. Keep the services pointed at the same MongoDB cluster and database. Do not use separate databases if the records must be shared.
 5. Set the same `SESSION_SECRET` on every service if other application features use it, and never commit any secret to the repository.
 
-The optional `MONGODB_MAX_POOL_SIZE` setting defaults to 40 connections per service. With three services, size the MongoDB cluster for the combined pool capacity and expected traffic. The `/api/health` endpoint reports whether the app connected to MongoDB.
+The app does not impose its own MongoDB connection-pool size. The MongoDB Node driver and the selected MongoDB tier control the pool behavior. With three services, size the MongoDB cluster for the combined traffic and provider connection limits. The `/api/health` endpoint reports whether the app connected to MongoDB.
 
 ## Main flows
 

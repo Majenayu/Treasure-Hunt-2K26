@@ -618,7 +618,6 @@ async function connectDatabase() {
   mongoClient = new MongoClient(MONGODB_URI, {
     serverSelectionTimeoutMS: 10000,
     waitQueueTimeoutMS: 5000,
-    maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE) || 40,
     maxConnecting: 4,
     retryReads: true,
     retryWrites: true,
