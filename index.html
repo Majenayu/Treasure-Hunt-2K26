@@ -1024,8 +1024,8 @@
         : complete
           ? `Great run, ${team.name}. Your final result is locked on the standings.`
           : `The final standings are ready for ${team.name}.`;
-      $('#finalDialogRank').textContent = rank === '—' ? '—' : `#${String(rank).padStart(2, '0')}`;
-      $('#finalDialogRankLabel').textContent = inTop ? 'TOP FINISHER' : 'FINAL PLACE';
+      $('#finalDialogRank').textContent = inTop ? 'TOP' : '—';
+      $('#finalDialogRankLabel').textContent = inTop ? 'TOP FINISHER' : 'FINAL STANDING';
       const dialog = $('#eventEndedDialog');
       if (!dialog.open) dialog.showModal();
     }
@@ -1233,6 +1233,7 @@
       const data = await api('/api/team/state');
       const team = data.team;
       const totalMissions = team.totalMissions || 10;
+       $('#app').classList.remove('team-event-gated', 'team-event-ended');
       $('#eventStatus').innerHTML = `<span class="dot"></span> CIRCUIT ${data.event.status}`;
       const challenge = team.currentChallenge;
       const complete = team.completed >= totalMissions;
@@ -1248,6 +1249,11 @@
         showFinalDialog(team, data, false);
         return;
       }
+       if (data.event.status === 'PAUSED') {
+         $('#view').innerHTML = `<div class="event-gate"><section class="event-gate-card"><div class="event-gate-icon">Ⅱ</div><h2>The event is paused</h2><p>Your progress is safe, ${escapeHtml(team.name)}. The organizer will resume the circuit when it is time to continue.</p><div class="progress-wrap" style="margin-top:24px;text-align:left"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${Math.min(100, Math.round((team.completed / totalMissions) * 100))}%"></i></div></div></section></div>`;
+         scheduleRender(3000);
+         return;
+       }
       if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
       const eventNotice = data.event.status === 'NOT_STARTED'
         ? '<div class="event-banner"><div class="event-banner-icon">!</div><div><strong>The event has not started yet.</strong><span>Stay ready. Mission controls will unlock as soon as the organizer starts the circuit.</span></div></div>'

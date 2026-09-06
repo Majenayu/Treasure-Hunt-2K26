@@ -507,7 +507,7 @@ const state = {
   totalPausedSeconds: 0,
   pauseStartedAt: null,
 };
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI || process.env['mongodb+srv'];
 const MONGODB_DB = process.env.MONGODB_DB || 'techhunt';
 let mongoClient = null;
 let appStateCollection = null;

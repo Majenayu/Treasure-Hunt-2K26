@@ -17,7 +17,7 @@ It listens on the `PORT` environment variable and defaults to port `5000` for Re
 
 ## Current storage model
 
-This first event-ready version intentionally has no MongoDB dependency or external authentication. Teams, sessions, challenge progress, and admin activity are held in memory and reset when the server restarts. The seeded event contains 10 distributed missions, and team routes are assigned as teams sign in.
+The app uses MongoDB for persistent event state. Set `MONGODB_URI` to the MongoDB connection string (the imported setup also accepts the existing `mongodb+srv` secret name) and optionally set `MONGODB_DB` to choose the database; it defaults to `techhunt`. Teams, sessions, challenge progress, and admin activity are persisted in the `app_state` collection.
 
 ## Main flows
 
