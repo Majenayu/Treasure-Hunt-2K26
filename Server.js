@@ -11,6 +11,12 @@ app.set('trust proxy', 1);
 const INSTANCE_ID = `${process.pid}-${crypto.randomUUID()}`;
 const STATE_LOCK_TTL_MS = 30000;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SURPRISE_ROUND_FIRST_AT_SECONDS = 10 * 60;
+const SURPRISE_ROUND_INTERVAL_SECONDS = 10 * 60;
+const SURPRISE_ROUND_DURATION_MS = 10 * 60 * 1000;
+const SURPRISE_TEAM_LIMIT = 5;
+const SURPRISE_MAX_REJECTIONS = 3;
+const SURPRISE_POINT_OPTIONS = [50, 75, 100, 125, 150, 175, 200];
 const ADMIN_USERNAME = 'majen';
 const ADMIN_PASSWORD = 'majen';
 const ORGANIZER_ACCOUNTS = {
@@ -25,6 +31,7 @@ const ORGANIZER_ACCOUNTS = {
   activity1: { checkpointType: 'activity', checkpointId: 'A1', checkpointLabel: 'T4' },
   activity2: { checkpointType: 'activity', checkpointId: 'A2', checkpointLabel: 'T5' },
   activity3: { checkpointType: 'activity', checkpointId: 'A3', checkpointLabel: 'T6' },
+  surprise1: { checkpointType: 'special', checkpointId: 'M510', checkpointLabel: 'M510' },
 };
 
 const challengeSeed = [
@@ -518,6 +525,8 @@ const state = {
   elapsedSeconds: 0,
   totalPausedSeconds: 0,
   pauseStartedAt: null,
+  surpriseRounds: [],
+  nextSurpriseAtSeconds: SURPRISE_ROUND_FIRST_AT_SECONDS,
 };
 const MONGODB_URI = process.env.MONGODB_URI || process.env['mongodb+srv'];
 const MONGODB_DB = process.env.MONGODB_DB || 'techhunt';
@@ -619,6 +628,10 @@ function hydrateSnapshot(snapshot) {
   teams.clear();
   for (const [id, team] of snapshot.teams || []) teams.set(id, team);
   auditLog.splice(0, auditLog.length, ...(snapshot.auditLog || []).slice(0, 30));
+  if (!Array.isArray(state.surpriseRounds)) state.surpriseRounds = [];
+  if (!Number.isFinite(Number(state.nextSurpriseAtSeconds))) {
+    state.nextSurpriseAtSeconds = SURPRISE_ROUND_FIRST_AT_SECONDS;
+  }
 }
 
 async function connectDatabase() {
@@ -849,6 +862,13 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+function requireSpecialVolunteer(req, res, next) {
+  if (req.user?.role !== 'organizer' || req.user.checkpointType !== 'special') {
+    return res.status(403).json({ error: 'Special volunteer access required.' });
+  }
+  return next();
+}
+
 function publicChallenge(challenge) {
   if (!challenge) return null;
   const { answer, questionSets, volunteerCode, riddleCodes, riddleLocations, ...safeChallenge } = challenge;
@@ -994,11 +1014,119 @@ function eventElapsedSeconds() {
   return Math.max(0, Math.floor(state.elapsedSeconds + (Date.now() - new Date(state.startedAt).getTime()) / 1000));
 }
 
+function surpriseRoundEntry(round, teamId) {
+  return round?.teams?.find((entry) => entry.teamId === teamId) || null;
+}
+
+function closeExpiredSurpriseRounds(now = Date.now()) {
+  let changed = false;
+  for (const round of state.surpriseRounds || []) {
+    if (round.status === 'OPEN' && now >= new Date(round.closesAt).getTime()) {
+      round.status = 'CLOSED';
+      for (const entry of round.teams || []) {
+        if (entry.status === 'PENDING') entry.status = 'EXPIRED';
+      }
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function ensureSurpriseRounds() {
+  if (!Array.isArray(state.surpriseRounds)) state.surpriseRounds = [];
+  if (!Number.isFinite(Number(state.nextSurpriseAtSeconds))) {
+    state.nextSurpriseAtSeconds = SURPRISE_ROUND_FIRST_AT_SECONDS;
+  }
+  let changed = closeExpiredSurpriseRounds();
+  if (state.status !== 'LIVE') return changed;
+
+  const elapsed = eventElapsedSeconds();
+  while (elapsed >= state.nextSurpriseAtSeconds) {
+    const selectedIds = new Set(
+      state.surpriseRounds.flatMap((round) => (round.teams || []).map((entry) => entry.teamId)),
+    );
+    const candidates = [...teams.values()]
+      .filter((team) => team.active && !selectedIds.has(team.id))
+      .sort((a, b) => new Date(a.startedAt || 0).getTime() - new Date(b.startedAt || 0).getTime() || a.id.localeCompare(b.id))
+      .slice(0, SURPRISE_TEAM_LIMIT);
+    const openedAt = new Date().toISOString();
+    const round = {
+      id: `surprise-${Date.now()}-${state.surpriseRounds.length + 1}`,
+      number: state.surpriseRounds.length + 1,
+      scheduledAtSeconds: state.nextSurpriseAtSeconds,
+      openedAt,
+      closesAt: new Date(Date.now() + SURPRISE_ROUND_DURATION_MS).toISOString(),
+      status: 'OPEN',
+      location: 'M510',
+      teams: candidates.map((team) => ({
+        teamId: team.id,
+        status: 'PENDING',
+        rejectionCount: 0,
+        points: 0,
+        verifiedAt: null,
+        awardedAt: null,
+      })),
+    };
+    state.surpriseRounds.push(round);
+    state.nextSurpriseAtSeconds += SURPRISE_ROUND_INTERVAL_SECONDS;
+    writeAudit('SURPRISE ROUND OPENED', `Round ${round.number} called ${candidates.length} team${candidates.length === 1 ? '' : 's'} to M510`);
+    changed = true;
+  }
+  return changed;
+}
+
+function surpriseFreezeSeconds(team, now = Date.now()) {
+  if (!team?.startedAt) return 0;
+  const missionStartedAt = new Date(team.startedAt).getTime();
+  return (state.surpriseRounds || []).reduce((total, round) => {
+    const roundStartedAt = new Date(round.openedAt).getTime();
+    const roundEndedAt = new Date(round.closesAt).getTime();
+    const overlapStart = Math.max(missionStartedAt, roundStartedAt);
+    const overlapEnd = Math.min(now, roundEndedAt);
+    return total + Math.max(0, overlapEnd - overlapStart) / 1000;
+  }, 0);
+}
+
+function publicSurpriseForTeam(team) {
+  const round = [...(state.surpriseRounds || [])]
+    .reverse()
+    .find((candidate) => surpriseRoundEntry(candidate, team.id));
+  if (!round) return null;
+  const entry = surpriseRoundEntry(round, team.id);
+  const isOpen = round.status === 'OPEN' && Date.now() < new Date(round.closesAt).getTime();
+  return {
+    id: round.id,
+    number: round.number,
+    location: round.location,
+    status: entry.status,
+    roundStatus: round.status,
+    openedAt: round.openedAt,
+    closesAt: round.closesAt,
+    responseCount: entry.rejectionCount,
+    attemptsRemaining: Math.max(0, SURPRISE_MAX_REJECTIONS - entry.rejectionCount),
+    canRespond: isOpen && entry.status === 'PENDING' && entry.rejectionCount < SURPRISE_MAX_REJECTIONS,
+    verified: Boolean(entry.verifiedAt),
+    awarded: entry.status === 'AWARDED',
+    points: entry.points || 0,
+    prompt: isOpen && entry.status === 'PENDING'
+      ? 'Your team has been called to M510 for a Surprise Round. You have 10 minutes to report and choose Accept or Reject.'
+      : entry.status === 'ACCEPTED'
+        ? 'Report to M510. The special volunteer will verify your team and record your bonus after the round.'
+        : entry.status === 'AWARDED'
+          ? `Surprise Round complete. ${entry.points} bonus points were added to your score.`
+          : entry.status === 'LOST'
+            ? 'The Surprise Round offer expired after three rejections. No bonus points were awarded.'
+            : entry.status === 'EXPIRED'
+              ? 'The Surprise Round window closed before your team accepted the offer.'
+              : 'Your Surprise Round response has been recorded.',
+  };
+}
+
 function secondsOnMission(team) {
   if (!team.currentChallenge || !team.startedAt) return 0;
   const wallSeconds = (Date.now() - new Date(team.startedAt).getTime()) / 1000;
   const pausedSeconds = Math.max(0, activePausedSeconds() - (team.startedPauseSeconds || 0));
-  return Math.max(0, Math.floor(wallSeconds - pausedSeconds));
+  return Math.max(0, Math.floor(wallSeconds - pausedSeconds - surpriseFreezeSeconds(team)));
 }
 
 function unlockRiddle(team, challenge) {
@@ -1063,6 +1191,7 @@ function publicTeam(team) {
     missionStarted,
     missionStartedAt: team.startedAt,
     missionSeconds: secondsOnMission(team),
+    surpriseRound: publicSurpriseForTeam(team),
   };
 }
 
@@ -1229,6 +1358,7 @@ app.get('/api/session', requireAuth, (req, res) => {
 });
 
 app.get('/api/game-state', (req, res) => {
+  ensureSurpriseRounds();
   res.json({
     started: state.status === 'LIVE',
     status: state.status,
@@ -1236,6 +1366,7 @@ app.get('/api/game-state', (req, res) => {
     elapsedSeconds: eventElapsedSeconds(),
     finalCodingStarted: false,
     roundPaused: state.status === 'PAUSED',
+    surpriseRound: state.surpriseRounds.at(-1) || null,
   });
 });
 
@@ -1494,6 +1625,8 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, async (req, res, n
     state.elapsedSeconds = 0;
     state.totalPausedSeconds = 0;
     state.pauseStartedAt = null;
+    state.surpriseRounds = [];
+    state.nextSurpriseAtSeconds = SURPRISE_ROUND_FIRST_AT_SECONDS;
     writeAudit('EVENT RESET', `All ${deletedTeams} team accounts and progress were deleted`);
     return res.json({ ok: true, deletedTeams });
   } catch (error) {
@@ -1554,10 +1687,50 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
 
 app.get('/api/team/state', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
+  ensureSurpriseRounds();
   const team = teams.get(req.user.teamId);
   const board = leaderboard();
   const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
   res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), isTopFinisher: Number(teamRank) > 0 && teamRank <= 3, event: state });
+});
+
+app.post('/api/team/surprise/respond', requireAuth, (req, res) => {
+  if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
+  ensureSurpriseRounds();
+  const team = teams.get(req.user.teamId);
+  const round = (state.surpriseRounds || []).find((candidate) => candidate.id === req.body?.roundId);
+  const entry = surpriseRoundEntry(round, team?.id);
+  const decision = String(req.body?.decision || '').trim().toLowerCase();
+  if (!team || !round || !entry) return res.status(404).json({ error: 'That Surprise Round offer is no longer available.' });
+  if (round.status !== 'OPEN' || Date.now() >= new Date(round.closesAt).getTime()) {
+    return res.status(409).json({ error: 'The 10-minute Surprise Round window has closed.' });
+  }
+  if (entry.status !== 'PENDING' || entry.rejectionCount >= SURPRISE_MAX_REJECTIONS) {
+    return res.status(409).json({ error: 'Your response for this Surprise Round has already been recorded.' });
+  }
+  if (!['accept', 'reject'].includes(decision)) {
+    return res.status(400).json({ error: 'Choose Accept or Reject.' });
+  }
+  if (decision === 'accept') {
+    entry.status = 'ACCEPTED';
+    entry.acceptedAt = new Date().toISOString();
+    writeAudit('SURPRISE ACCEPTED', `${team.id} accepted the M510 Surprise Round`, team.id);
+    return res.json({ ok: true, accepted: true, surpriseRound: publicSurpriseForTeam(team) });
+  }
+  entry.rejectionCount += 1;
+  if (entry.rejectionCount >= SURPRISE_MAX_REJECTIONS) {
+    entry.status = 'LOST';
+    writeAudit('SURPRISE DECLINED', `${team.id} rejected the M510 offer three times`, team.id);
+  } else {
+    writeAudit('SURPRISE REJECTED', `${team.id} rejected the M510 offer (${entry.rejectionCount}/${SURPRISE_MAX_REJECTIONS})`, team.id);
+  }
+  res.json({
+    ok: true,
+    rejected: true,
+    attemptsRemaining: Math.max(0, SURPRISE_MAX_REJECTIONS - entry.rejectionCount),
+    lost: entry.status === 'LOST',
+    surpriseRound: publicSurpriseForTeam(team),
+  });
 });
 
 app.get('/api/admin/riddle-qrs', requireAuth, requireAdmin, async (req, res) => {
@@ -1750,6 +1923,7 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
 
 app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
   if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  if (req.user.checkpointType === 'special') return res.json({ checkpointId: 'M510', checkpointLabel: 'M510', teams: [] });
   const station = req.user.checkpointLabel;
        const rows = [...teams.values()]
     .filter((team) => {
@@ -1760,6 +1934,75 @@ app.get('/api/organizer/checkpoint-teams', requireAuth, (req, res) => {
     })
     .map((team) => ({ ...publicTeam(team), checkpointId: req.user.checkpointId || 'ALL', checkpointLabel: station || 'ALL' }));
   res.json({ checkpointId: req.user.checkpointId || 'ALL', checkpointLabel: station || 'ALL', teams: rows });
+});
+
+app.get('/api/special/rounds', requireAuth, requireSpecialVolunteer, (req, res) => {
+  ensureSurpriseRounds();
+  const rounds = (state.surpriseRounds || []).slice().reverse().map((round) => ({
+    id: round.id,
+    number: round.number,
+    status: round.status,
+    location: round.location,
+    openedAt: round.openedAt,
+    closesAt: round.closesAt,
+    teams: (round.teams || []).map((entry) => {
+      const team = teams.get(entry.teamId);
+      return {
+        ...entry,
+        teamId: entry.teamId,
+        teamName: team?.name || 'Unknown team',
+        score: team?.score || 0,
+        completed: team?.completedChallenges?.length || 0,
+        totalMissions: team?.route?.length || 0,
+      };
+    }),
+  }));
+  res.json({
+    location: 'M510',
+    pointOptions: SURPRISE_POINT_OPTIONS,
+    rounds,
+  });
+});
+
+app.post('/api/special/verify', requireAuth, requireSpecialVolunteer, (req, res) => {
+  ensureSurpriseRounds();
+  const round = (state.surpriseRounds || []).find((candidate) => candidate.id === req.body?.roundId);
+  const entry = surpriseRoundEntry(round, String(req.body?.teamId || '').trim().toUpperCase());
+  if (!round || !entry) return res.status(404).json({ error: 'That team is not assigned to a Surprise Round.' });
+  if (entry.status !== 'ACCEPTED' && entry.status !== 'AWAITING_AWARD') {
+    return res.status(409).json({ error: 'The team must accept the Surprise Round before it can be verified.' });
+  }
+  entry.status = 'AWAITING_AWARD';
+  entry.verifiedAt = entry.verifiedAt || new Date().toISOString();
+  writeAudit('SURPRISE TEAM VERIFIED', `${entry.teamId} verified at M510`, req.user.username);
+  res.json({ ok: true, roundId: round.id, teamId: entry.teamId });
+});
+
+app.post('/api/special/award', requireAuth, requireSpecialVolunteer, (req, res) => {
+  ensureSurpriseRounds();
+  const round = (state.surpriseRounds || []).find((candidate) => candidate.id === req.body?.roundId);
+  const teamId = String(req.body?.teamId || '').trim().toUpperCase();
+  const entry = surpriseRoundEntry(round, teamId);
+  const points = Number(req.body?.points);
+  if (!round || !entry) return res.status(404).json({ error: 'That team is not assigned to a Surprise Round.' });
+  if (!SURPRISE_POINT_OPTIONS.includes(points)) {
+    return res.status(400).json({ error: `Choose one of: ${SURPRISE_POINT_OPTIONS.join(', ')} points.` });
+  }
+  if (!entry.verifiedAt || !['AWAITING_AWARD', 'ACCEPTED'].includes(entry.status)) {
+    return res.status(409).json({ error: 'Verify the team before awarding bonus points.' });
+  }
+  if (Date.now() < new Date(round.closesAt).getTime()) {
+    return res.status(409).json({ error: 'Wait until the 10-minute Surprise Round window closes before awarding points.' });
+  }
+  if (entry.status === 'AWARDED') return res.json({ ok: true, alreadyAwarded: true, points: entry.points });
+  const team = teams.get(teamId);
+  if (!team) return res.status(404).json({ error: 'Team account not found.' });
+  team.score += points;
+  entry.points = points;
+  entry.status = 'AWARDED';
+  entry.awardedAt = new Date().toISOString();
+  writeAudit('SURPRISE BONUS AWARDED', `${teamId} received ${points} points at M510`, req.user.username);
+  res.json({ ok: true, teamId, points, score: team.score });
 });
 
 app.post('/api/organizer/mark-status', requireAuth, (req, res) => {
@@ -1781,6 +2024,12 @@ async function startServer() {
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`TechHunt 2026 Mission Control running on port ${PORT}`);
   });
+  const surpriseScheduler = setInterval(() => {
+    if (state.status !== 'LIVE') return;
+    const changed = ensureSurpriseRounds();
+    if (changed) void persistAppState();
+  }, 1000);
+  surpriseScheduler.unref?.();
   server.requestTimeout = 30000;
   server.headersTimeout = 35000;
   server.keepAliveTimeout = 5000;

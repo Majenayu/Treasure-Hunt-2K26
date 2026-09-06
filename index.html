@@ -240,6 +240,25 @@
     .event-banner span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .event-banner.is-ended { border-color: rgba(45,139,104,.35); background: rgba(45,139,104,.1); }
     .event-banner.is-ended .event-banner-icon { background: var(--green); }
+    .surprise-dialog { width: min(560px, calc(100% - 28px)); border: 1px solid rgba(242,174,67,.5); border-radius: 24px; padding: 0; color: #f8f1e8; background: #101524; box-shadow: 0 25px 90px rgba(0,0,0,.55); }
+    .surprise-dialog::backdrop { background: rgba(2,5,15,.8); backdrop-filter: blur(6px); }
+    .surprise-dialog-content { padding: 30px; text-align: center; }
+    .surprise-dialog-badge { display: grid; place-items: center; width: 68px; height: 68px; margin: 0 auto 16px; border: 1px solid rgba(242,174,67,.65); border-radius: 50%; color: #ffd38a; background: rgba(242,174,67,.15); font: 700 28px 'Space Grotesk'; }
+    .surprise-dialog h2 { margin: 0; font: 700 30px 'Space Grotesk'; letter-spacing: -.06em; }
+    .surprise-dialog p { margin: 11px auto 0; max-width: 420px; color: rgba(224,231,255,.72); font-size: 13px; line-height: 1.6; }
+    .surprise-dialog-details { display: grid; gap: 8px; margin: 22px auto; max-width: 390px; padding: 15px; border: 1px solid rgba(242,174,67,.2); border-radius: 14px; background: rgba(242,174,67,.08); text-align: left; }
+    .surprise-dialog-details div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+    .surprise-dialog-details span { color: rgba(224,231,255,.62); }
+    .surprise-dialog-details strong { color: #ffd38a; font-family: 'DM Mono'; }
+    .surprise-dialog-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
+    .special-round-card { border: 1px solid rgba(242,174,67,.3); background: linear-gradient(135deg, rgba(242,174,67,.1), rgba(242,106,61,.05)); border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+    .special-round-card h3 { margin: 0; font: 700 18px 'Space Grotesk'; }
+    .special-round-card .card-subtitle { margin-top: 5px; }
+    .special-round-card .challenge-row { margin-top: 12px; background: rgba(255,255,255,.04); border-color: rgba(242,174,67,.16); }
+    .special-award-select { min-width: 112px; border: 1px solid rgba(242,174,67,.3); border-radius: 9px; padding: 8px; color: #f8f1e8; background: #101524; font: 11px 'DM Mono'; }
+    body.theme-light .surprise-dialog { color: var(--ink); background: var(--card); border-color: var(--line); }
+    body.theme-light .surprise-dialog p, body.theme-light .surprise-dialog-details span { color: var(--muted); }
+    body.theme-light .special-award-select { color: var(--ink); background: var(--card); border-color: var(--line); }
     .event-gate { min-height: calc(100vh - 190px); display: grid; place-items: center; }
     .event-gate-card { width: min(620px, 100%); padding: 42px 34px; border: 1px solid rgba(242,106,61,.25); border-radius: 26px; text-align: center; background: radial-gradient(circle at 50% 0, rgba(242,106,61,.16), transparent 58%), var(--card); box-shadow: var(--shadow); }
     .event-gate-icon { display: grid; place-items: center; width: 70px; height: 70px; margin: 0 auto 20px; border: 1px solid rgba(242,174,67,.55); border-radius: 22px; color: #ffd38a; background: rgba(242,174,67,.12); font: 700 30px 'Space Grotesk'; }
@@ -786,11 +805,28 @@
       </div>
     </div>
   </dialog>
+  <dialog id="surpriseRoundDialog" class="surprise-dialog" aria-labelledby="surpriseRoundTitle">
+    <div class="surprise-dialog-content">
+      <div class="surprise-dialog-badge" aria-hidden="true">!</div>
+      <h2 id="surpriseRoundTitle">Surprise Round</h2>
+      <p id="surpriseRoundMessage">Your team has been selected for a special bonus round.</p>
+      <div class="surprise-dialog-details">
+        <div><span>Report to</span><strong>M510</strong></div>
+        <div><span>Round window</span><strong id="surpriseRoundTimer">10:00</strong></div>
+        <div><span>Response attempts</span><strong id="surpriseRoundAttempts">3</strong></div>
+      </div>
+      <p id="surpriseRoundFinePrint">Accepting means your team agrees to report to M510. Your regular mission timer is frozen for this 10-minute window. Rejecting three times forfeits the bonus opportunity.</p>
+      <div class="surprise-dialog-actions">
+        <button id="surpriseReject" class="outline" type="button">Reject</button>
+        <button id="surpriseAccept" class="primary" type="button">Accept &amp; report ↗</button>
+      </div>
+    </div>
+  </dialog>
 
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v3').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, qrLockoutTimer: null, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null, surpriseRound: null, surpriseTimer: null, lastSurpriseResponseAt: 0 };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -869,6 +905,7 @@
               }
               remaining = Math.max(0, challenge.timeLimit - live.team.missionSeconds);
               currentEvent = live.event;
+              showSurpriseRound(live.team.surpriseRound);
             } catch (_) {
               // Keep the last server-confirmed value visible during a brief network gap.
             } finally {
@@ -890,6 +927,54 @@
         update();
      }
     const showToast = (message) => { $('#toast').textContent = message; $('#toast').classList.remove('hidden'); setTimeout(() => $('#toast').classList.add('hidden'), 3500); };
+    const closeSurpriseDialog = () => {
+      clearInterval(state.surpriseTimer);
+      state.surpriseTimer = null;
+      const dialog = $('#surpriseRoundDialog');
+      if (dialog?.open) dialog.close();
+    };
+    const showSurpriseRound = (round) => {
+      if (!round?.canRespond) {
+        closeSurpriseDialog();
+        return;
+      }
+      if (Date.now() - state.lastSurpriseResponseAt < 4500) return;
+      const dialog = $('#surpriseRoundDialog');
+      state.surpriseRound = round;
+      const remainingSeconds = () => Math.max(0, Math.ceil((new Date(round.closesAt).getTime() - Date.now()) / 1000));
+      const update = () => {
+        const remaining = remainingSeconds();
+        $('#surpriseRoundTimer').textContent = formatTime(remaining);
+        $('#surpriseRoundAttempts').textContent = `${round.attemptsRemaining} left`;
+        if (remaining <= 0) closeSurpriseDialog();
+      };
+      if (!dialog.open) {
+        $('#surpriseRoundMessage').textContent = round.prompt;
+        $('#surpriseAccept').disabled = false;
+        $('#surpriseReject').disabled = false;
+        dialog.showModal();
+      }
+      clearInterval(state.surpriseTimer);
+      state.surpriseTimer = setInterval(update, 1000);
+      update();
+    };
+    const respondToSurprise = async (decision) => {
+      const round = state.surpriseRound;
+      if (!round) return;
+      $('#surpriseAccept').disabled = true;
+      $('#surpriseReject').disabled = true;
+      try {
+        const data = await api('/api/team/surprise/respond', { method: 'POST', body: JSON.stringify({ roundId: round.id, decision }) });
+        closeSurpriseDialog();
+        state.lastSurpriseResponseAt = Date.now();
+        showToast(data.accepted ? 'Accepted. Report to M510 now — your mission timer is frozen.' : data.lost ? 'You declined three times. This bonus opportunity is lost.' : `Rejected. The buzzer will return with ${data.attemptsRemaining} attempt${data.attemptsRemaining === 1 ? '' : 's'} remaining.`);
+        render();
+      } catch (error) {
+        $('#surpriseAccept').disabled = false;
+        $('#surpriseReject').disabled = false;
+        showToast(error.message);
+      }
+    };
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     const installButtons = () => [$('#installApp'), $('#loginInstallApp')].filter(Boolean);
@@ -1320,15 +1405,57 @@
        const participantScore = mysteryQuiz ? '<div class="hero-score"><span>QUIZ IN PROGRESS</span></div>' : `<div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div>`;
        const participantPoints = mysteryQuiz ? '<div class="rank-row"><span class="rank-number">01</span><strong>Quiz status</strong><span>IN PROGRESS</span></div>' : `<div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div>`;
        $('#view').innerHTML = `<div class="team-layout">${eventNotice}<section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
+       showSurpriseRound(team.surpriseRound);
        if ($('#startMission')) $('#startMission').addEventListener('click', startMission);
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
        document.querySelectorAll('.mission-quiz-answer').forEach((input) => input.addEventListener('change', submitAnswer));
       document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; render(); }));
         if (team.missionStarted && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
+        if (team.surpriseRound?.canRespond) scheduleRender(1000);
         else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(1000);
+        else if (!complete) scheduleRender(5000);
     }
     $('#finalDialogReturn').addEventListener('click', logout);
+    async function renderSpecialVolunteer() {
+      const data = await api('/api/special/rounds');
+      $('#eventStatus').innerHTML = `<span class="dot"></span> SPECIAL VOLUNTEER · ${escapeHtml(data.location)}`;
+      const rounds = data.rounds.map((round) => {
+        const roundClosed = round.status === 'CLOSED';
+        const rows = round.teams.length ? round.teams.map((team) => {
+          const canVerify = ['ACCEPTED'].includes(team.status);
+          const canAward = roundClosed && team.verifiedAt && ['AWAITING_AWARD', 'ACCEPTED'].includes(team.status);
+          const status = team.status === 'AWAITING_AWARD' ? 'VERIFIED · READY TO AWARD' : team.status.replace('_', ' ');
+          const awardOptions = data.pointOptions.map((points) => `<option value="${points}">${points} points</option>`).join('');
+          const action = team.status === 'AWARDED'
+            ? `<span class="tag">${team.points} POINTS AWARDED</span>`
+            : canVerify
+              ? `<button class="primary special-verify" data-round="${round.id}" data-team="${team.teamId}">Verify team ↗</button>`
+              : canAward
+                ? `<div class="score-entry"><select class="special-award-select" data-round="${round.id}" data-team="${team.teamId}" aria-label="Bonus points for ${escapeHtml(team.teamName)}">${awardOptions}</select><button class="outline special-award" data-round="${round.id}" data-team="${team.teamId}">Award</button></div>`
+                : `<span class="tag">${escapeHtml(status)}</span>`;
+          return `<div class="challenge-row volunteer-row"><span class="challenge-index">${escapeHtml(team.teamId.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.teamName)} <span class="team-id">${escapeHtml(team.teamId)}</span></strong><span>${team.completed}/${team.totalMissions} cleared · ${team.score} points · ${escapeHtml(status)}</span></div>${action}</div>`;
+        }).join('') : '<div class="empty-state"><strong>No eligible teams were available.</strong><span>This slot is recorded; teams joining later will be considered in the next 10-minute slot.</span></div>';
+        const closeLabel = roundClosed ? 'CLOSED' : `OPEN · closes ${new Date(round.closesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        return `<div class="special-round-card"><div class="card-heading"><div><h3>Surprise Round ${round.number}</h3><p class="card-subtitle">M510 · ${round.teams.length} team${round.teams.length === 1 ? '' : 's'} selected</p></div><span class="tag">${closeLabel}</span></div>${rows}</div>`;
+      }).join('');
+      $('#view').innerHTML = `<section class="card"><div class="card-heading"><div><h2 class="card-title">M510 · Surprise Round console</h2><p class="card-subtitle">Verify accepted teams and award points after their 10-minute window closes. Each team can appear only once.</p></div><span class="tag">SPECIAL VOLUNTEER</span></div>${rounds || '<div class="empty-state"><strong>Waiting for the first Surprise Round.</strong><span>The first selection opens 10 minutes after the event starts.</span></div>'}</section>`;
+      document.querySelectorAll('.special-verify').forEach((button) => button.addEventListener('click', async () => {
+        button.disabled = true;
+        try { await api('/api/special/verify', { method: 'POST', body: JSON.stringify({ roundId: button.dataset.round, teamId: button.dataset.team }) }); showToast('Team verified at M510.'); render(); } catch (error) { button.disabled = false; showToast(error.message); }
+      }));
+      document.querySelectorAll('.special-award').forEach((button) => button.addEventListener('click', async () => {
+        const select = document.querySelector(`.special-award-select[data-round="${button.dataset.round}"][data-team="${button.dataset.team}"]`);
+        button.disabled = true;
+        try { await api('/api/special/award', { method: 'POST', body: JSON.stringify({ roundId: button.dataset.round, teamId: button.dataset.team, points: select.value }) }); showToast('Surprise bonus added to the team score.'); render(); } catch (error) { button.disabled = false; showToast(error.message); }
+      }));
+      scheduleRender(3000);
+    }
     async function renderOrganizer() {
+      if (state.user?.checkpointType === 'special') {
+        if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
+        await renderSpecialVolunteer();
+        return;
+      }
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
       const data = await api('/api/organizer/checkpoint-teams');
       $('#eventStatus').innerHTML = `<span class="dot"></span> LOCATION ${escapeHtml(data.checkpointId)} · ${escapeHtml(data.checkpointLabel)}`;
@@ -1407,6 +1534,12 @@
     $('#closeQrLockout').addEventListener('click', () => {
       $('#qrLockoutDialog').close();
       openQrScanner();
+    });
+    $('#surpriseAccept').addEventListener('click', () => respondToSurprise('accept'));
+    $('#surpriseReject').addEventListener('click', () => respondToSurprise('reject'));
+    $('#surpriseRoundDialog').addEventListener('close', () => {
+      clearInterval(state.surpriseTimer);
+      state.surpriseTimer = null;
     });
     (async () => {
       if (!state.token) return;
