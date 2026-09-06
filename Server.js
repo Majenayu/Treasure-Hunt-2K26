@@ -451,8 +451,9 @@ const sessions = new Map();
 const auditLog = [];
 const state = {
   eventName: 'TechHunt 2026',
-  status: 'PAUSED',
+  status: 'NOT_STARTED',
   startedAt: null,
+  endedAt: null,
   elapsedSeconds: 0,
   totalPausedSeconds: 0,
   pauseStartedAt: null,
@@ -1003,6 +1004,9 @@ app.get('/api/admin/progress', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/event', requireAuth, requireAdmin, (req, res) => {
+  if (state.status === 'ENDED') {
+    return res.status(409).json({ error: 'The event has ended. Reset it before starting another circuit.' });
+  }
   if (state.status === 'LIVE') {
     state.elapsedSeconds = eventElapsedSeconds();
     state.startedAt = null;
@@ -1019,12 +1023,32 @@ app.post('/api/admin/event', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/start-event', requireAuth, requireAdmin, (req, res) => {
+  if (state.status === 'ENDED') {
+    return res.status(409).json({ error: 'Reset the event before starting a new circuit.' });
+  }
   state.status = 'LIVE';
   if (state.pauseStartedAt) state.totalPausedSeconds += Math.max(0, Date.now() - new Date(state.pauseStartedAt).getTime()) / 1000;
   if (!state.startedAt) state.startedAt = new Date();
+  state.endedAt = null;
   state.pauseStartedAt = null;
   writeAudit('EVENT STARTED', 'TechHunt 2026 is live');
   res.json({ ok: true, started: true, elapsedSeconds: eventElapsedSeconds() });
+});
+
+app.post('/api/admin/end-event', requireAuth, requireAdmin, (req, res) => {
+  if (state.status === 'NOT_STARTED') {
+    return res.status(409).json({ error: 'Start the event before ending it.' });
+  }
+  if (state.status === 'ENDED') {
+    return res.json({ ok: true, status: state.status, elapsedSeconds: eventElapsedSeconds() });
+  }
+  state.elapsedSeconds = eventElapsedSeconds();
+  state.startedAt = null;
+  state.pauseStartedAt = null;
+  state.status = 'ENDED';
+  state.endedAt = new Date();
+  writeAudit('EVENT ENDED', 'The circuit is closed and final standings are ready');
+  res.json({ ok: true, status: state.status, elapsedSeconds: state.elapsedSeconds });
 });
 
 app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
@@ -1039,8 +1063,9 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
     team.mysteryProgress = {};
     team.mysteryCorrect = {};
   }
-  state.status = 'PAUSED';
+  state.status = 'NOT_STARTED';
   state.startedAt = null;
+  state.endedAt = null;
   state.elapsedSeconds = 0;
   state.totalPausedSeconds = 0;
   state.pauseStartedAt = null;
@@ -1049,6 +1074,9 @@ app.post('/api/admin/reset-event', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/toggle-round', requireAuth, requireAdmin, (req, res) => {
+  if (state.status === 'ENDED') {
+    return res.status(409).json({ error: 'The event has ended. Reset it before starting another round.' });
+  }
   if (state.status === 'LIVE') {
     state.elapsedSeconds = eventElapsedSeconds();
     state.startedAt = null;
@@ -1098,7 +1126,9 @@ app.post('/api/admin/teams/:id/reset', requireAuth, requireAdmin, (req, res) => 
 app.get('/api/team/state', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
   const team = teams.get(req.user.teamId);
-  res.json({ team: publicTeam(team), leaderboard: leaderboard().slice(0, 5), event: state });
+  const board = leaderboard();
+  const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
+  res.json({ team: publicTeam(team), leaderboard: board.slice(0, 5), teamRank, event: state });
 });
 
 app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {
@@ -1119,7 +1149,9 @@ app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {
 
 app.post('/api/team/start', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
-  if (state.status !== 'LIVE') return res.status(409).json({ error: 'The circuit is currently paused.' });
+  if (state.status !== 'LIVE') {
+    return res.status(409).json({ error: state.status === 'NOT_STARTED' ? 'The event has not started yet.' : state.status === 'ENDED' ? 'The event has ended.' : 'The circuit is currently paused.' });
+  }
   const team = teams.get(req.user.teamId);
   const challenge = getTeamChallenge(team);
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
@@ -1202,7 +1234,9 @@ app.post('/api/organizer/score', requireAuth, (req, res) => {
 
 app.post('/api/team/submit', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
-  if (state.status !== 'LIVE') return res.status(409).json({ error: 'The circuit is currently paused.' });
+  if (state.status !== 'LIVE') {
+    return res.status(409).json({ error: state.status === 'NOT_STARTED' ? 'The event has not started yet.' : state.status === 'ENDED' ? 'The event has ended.' : 'The circuit is currently paused.' });
+  }
   const team = teams.get(req.user.teamId);
   const challenge = getTeamChallenge(team);
   if (!challenge || team.currentChallenge !== challenge.id || !team.startedAt) {

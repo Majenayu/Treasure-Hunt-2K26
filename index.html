@@ -211,6 +211,29 @@
     .riddle-qr span { display: block; color: rgba(180,200,255,.68); font-size: 12px; line-height: 1.5; }
     .riddle-qr code { color: #ff956f; font: 500 12px 'DM Mono'; }
     .toast { position: fixed; right: 24px; bottom: 24px; color: white; background: var(--ink); border-left: 4px solid var(--orange); border-radius: 10px; padding: 13px 16px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; }
+    .event-banner { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid rgba(242,106,61,.28); border-radius: 16px; background: linear-gradient(120deg, rgba(242,106,61,.12), rgba(242,174,67,.08)); }
+    .event-banner-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px; color: #fff; background: var(--orange); font: 700 16px 'Space Grotesk'; }
+    .event-banner strong { display: block; font: 700 14px 'Space Grotesk'; }
+    .event-banner span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .event-banner.is-ended { border-color: rgba(45,139,104,.35); background: rgba(45,139,104,.1); }
+    .event-banner.is-ended .event-banner-icon { background: var(--green); }
+    .final-dialog { width: min(520px, calc(100% - 28px)); border: 1px solid rgba(242,106,61,.3); border-radius: 24px; padding: 0; color: #eaf0ff; background: #080d1a; box-shadow: 0 25px 90px rgba(0,0,0,.48); }
+    .final-dialog::backdrop { background: rgba(2,5,15,.76); backdrop-filter: blur(5px); }
+    .final-dialog-content { padding: 30px; text-align: center; }
+    .final-dialog-badge { display: grid; place-items: center; width: 62px; height: 62px; margin: 0 auto 16px; border: 1px solid rgba(242,174,67,.55); border-radius: 50%; color: #ffd38a; background: rgba(242,174,67,.12); font-size: 28px; }
+    .final-dialog h2 { margin: 0; font: 700 29px 'Space Grotesk'; letter-spacing: -.06em; }
+    .final-dialog p { margin: 10px auto 0; max-width: 370px; color: rgba(180,200,255,.7); font-size: 13px; line-height: 1.55; }
+    .final-dialog-rank { display: inline-flex; align-items: baseline; gap: 8px; margin: 22px 0; padding: 10px 16px; border: 1px solid rgba(242,106,61,.24); border-radius: 12px; color: #ff956f; background: rgba(242,106,61,.1); font: 500 12px 'DM Mono'; }
+    .final-dialog-rank strong { font: 700 28px 'Space Grotesk'; color: #fff; }
+    .final-dialog-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
+    body.theme-light .final-dialog { color: var(--ink); background: var(--card); border-color: var(--line); box-shadow: 0 25px 80px rgba(49,28,15,.25); }
+    body.theme-light .final-dialog p { color: var(--muted); }
+    body.theme-light .final-dialog-rank strong { color: var(--ink); }
+    @media (max-width: 620px) {
+      .event-banner { padding: 14px; }
+      .final-dialog-content { padding: 25px 20px; }
+      .final-dialog-actions > * { flex: 1 1 100%; }
+    }
      .theme-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; border: 1px solid rgba(242,106,61,.2); border-radius: 999px; padding: 7px 10px; background: rgba(242,106,61,.08); color: #ffb18e; font: 500 10px 'DM Mono'; letter-spacing: .06em; text-transform: uppercase; transition: transform .2s ease, background .2s ease, border-color .2s ease, color .2s ease; }
      .theme-toggle:hover { transform: translateY(-1px); background: rgba(242,106,61,.15); border-color: rgba(242,106,61,.45); }
      .theme-toggle-icon { width: 14px; height: 14px; border: 1.5px solid currentColor; border-radius: 50%; display: inline-block; position: relative; overflow: hidden; }
@@ -663,11 +686,23 @@
     </main>
   </div>
   <div id="toast" class="toast hidden"></div>
+  <dialog id="eventEndedDialog" class="final-dialog" aria-labelledby="finalDialogTitle">
+    <div class="final-dialog-content">
+      <div class="final-dialog-badge" aria-hidden="true">✦</div>
+      <h2 id="finalDialogTitle">Circuit complete</h2>
+      <p id="finalDialogMessage"></p>
+      <div class="final-dialog-rank"><strong id="finalDialogRank">—</strong><span id="finalDialogRankLabel">FINAL PLACE</span></div>
+      <div class="final-dialog-actions">
+        <button id="finalDialogBoard" class="outline" type="button">View standings ↗</button>
+        <button id="finalDialogReturn" class="primary" type="button">Return to start ↗</button>
+      </div>
+    </div>
+  </dialog>
 
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v2').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
@@ -742,7 +777,7 @@
          }
           if (!$('#missionTimer')) return;
            element.textContent = `${formatTime(remaining)} remaining`;
-           if (remaining <= 0 && currentEvent?.status !== 'PAUSED' && !state.expiringMission) {
+           if (remaining <= 0 && currentEvent?.status === 'LIVE' && !state.expiringMission) {
            state.expiringMission = true;
            api('/api/team/submit', { method: 'POST', body: JSON.stringify({ answers: [] }) })
              .then(() => showToast('Time expired. 20% points awarded.'))
@@ -755,6 +790,24 @@
         update();
      }
     const showToast = (message) => { $('#toast').textContent = message; $('#toast').classList.remove('hidden'); setTimeout(() => $('#toast').classList.add('hidden'), 3500); };
+    function showFinalDialog(team, data, complete) {
+      if (state.finalDialogShown) return;
+      state.finalDialogShown = true;
+      const rank = data.teamRank || '—';
+      const inTop = Number(rank) > 0 && Number(rank) <= 3;
+      $('#finalDialogTitle').textContent = data.event.status === 'ENDED' ? 'The event has ended' : 'You crossed the finish line';
+      $('#finalDialogMessage').textContent = inTop
+        ? Number(rank) === 1
+          ? `Amazing work, ${team.name}. You are in the top spot.`
+          : `Amazing work, ${team.name}. You are in the top three.`
+        : complete
+          ? `Great run, ${team.name}. Your final result is locked on the standings.`
+          : `The final standings are ready for ${team.name}.`;
+      $('#finalDialogRank').textContent = rank === '—' ? '—' : `#${String(rank).padStart(2, '0')}`;
+      $('#finalDialogRankLabel').textContent = inTop ? 'TOP FINISHER' : 'FINAL PLACE';
+      const dialog = $('#eventEndedDialog');
+      if (!dialog.open) dialog.showModal();
+    }
     const setLoginError = (message) => { $('#loginError').textContent = message; $('#loginError').classList.toggle('hidden', !message); };
     const setRole = (role) => {
       document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.role === role));
@@ -817,11 +870,12 @@
       $('#eventStatus').style.color = data.event.status === 'LIVE' ? 'var(--green)' : 'var(--orange-dark)';
       if (state.view === 'adminGame') {
         $('#view').innerHTML = `<div class="stats">${statCard('Teams registered', data.stats.registered, '')}${statCard('Active missions', data.stats.active, '')}${statCard('Completed teams', data.stats.completed, '')}<div class="stat"><div class="stat-label">Event timer</div><div id="eventTimer" class="stat-value">${formatTime(data.eventElapsedSeconds)}</div><div class="card-subtitle">${data.event.status === 'LIVE' ? 'event is running' : 'event is paused'}</div></div></div>
-          <div class="grid"><div><section class="card"><div class="card-heading"><div><h2 class="card-title">Event control</h2><p class="card-subtitle">Start, pause, reset, and monitor the live event.</p></div><div class="admin-actions"><span class="timer">${data.event.status === 'LIVE' ? 'LIVE' : 'PAUSED'}</span><button id="startEvent" class="primary">Start event ↗</button><button id="eventToggle" class="outline">${data.event.status === 'LIVE' ? 'Pause event' : 'Resume event'}</button><button id="resetEvent" class="outline">Reset event</button></div></div><div class="station-list">${data.stations.map((station) => `<div class="station-row"><div><div class="station-name">${station.name}</div><div class="station-type">${station.type} · ${station.count ? `${station.count} active` : 'available'}</div></div><div class="bar"><i style="width:${station.count ? 100 : 0}%"></i></div><div class="capacity">${station.count} active</div></div>`).join('')}</div></section>
+          <div class="grid"><div><section class="card"><div class="card-heading"><div><h2 class="card-title">Event control</h2><p class="card-subtitle">Start, pause, finish, reset, and monitor the live event.</p></div><div class="admin-actions"><span class="timer">${data.event.status === 'LIVE' ? 'LIVE' : data.event.status === 'ENDED' ? 'ENDED' : data.event.status === 'NOT_STARTED' ? 'NOT STARTED' : 'PAUSED'}</span><button id="startEvent" class="primary" ${data.event.status === 'ENDED' ? 'disabled' : ''}>Start event ↗</button><button id="eventToggle" class="outline" ${data.event.status === 'ENDED' ? 'disabled' : ''}>${data.event.status === 'LIVE' ? 'Pause event' : 'Resume event'}</button><button id="endEvent" class="outline" ${data.event.status === 'ENDED' || data.event.status === 'NOT_STARTED' ? 'disabled' : ''}>End event</button><button id="resetEvent" class="outline">Reset event</button></div></div><div class="station-list">${data.stations.map((station) => `<div class="station-row"><div><div class="station-name">${station.name}</div><div class="station-type">${station.type} · ${station.count ? `${station.count} active` : 'available'}</div></div><div class="bar"><i style="width:${station.count ? 100 : 0}%"></i></div><div class="capacity">${station.count} active</div></div>`).join('')}</div></section>
           <section class="card"><div class="card-heading"><div><h2 class="card-title">Team activity</h2><p class="card-subtitle">The latest moves in the circuit</p></div><button class="outline" data-view="adminTeams">View all</button></div><div class="activity">${data.activity.length ? data.activity.map((item) => `<div class="activity-row"><i class="activity-mark"></i><div><strong>${escapeHtml(item.action)} <span style="font-weight:400;color:var(--muted)">· ${escapeHtml(item.detail)}</span></strong><time>${escapeHtml(item.actor)} · ${new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div></div>`).join('') : '<p class="card-subtitle">No activity yet. Teams will appear here as they move.</p>'}</div></section></div>
            <div><section class="card"><div class="card-heading"><div><h2 class="card-title">Route map</h2><p class="card-subtitle">${data.challenges.length} stations · controlled sequence</p></div></div><div class="challenge-list">${data.challenges.slice(0, 6).map(challengeRow).join('')}</div><button class="outline wide" data-view="adminCheckpoints">Open all locations ↗</button></section></div></div>`;
         $('#startEvent').addEventListener('click', async () => { await api('/api/admin/start-event', { method: 'POST' }); showToast('Event started.'); render(); });
         $('#eventToggle').addEventListener('click', async () => { await api('/api/admin/event', { method: 'POST' }); showToast(data.event.status === 'LIVE' ? 'Event paused.' : 'Event resumed.'); render(); });
+        $('#endEvent').addEventListener('click', async () => { if (confirm('End the event now? Teams will see the final standings and cannot continue.')) { await api('/api/admin/end-event', { method: 'POST' }); showToast('Event ended. Final standings are ready.'); render(); } });
         $('#resetEvent').addEventListener('click', async () => { if (confirm('Reset the whole event? All team scores and progress will be cleared.')) { await api('/api/admin/reset-event', { method: 'POST' }); showToast('Event reset.'); render(); } });
         startEventClock(data.eventElapsedSeconds, data.event.status);
         scheduleRender(5000);
@@ -930,6 +984,14 @@
       if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
       const challenge = team.currentChallenge;
       const complete = team.completed >= totalMissions;
+      const eventNotice = data.event.status === 'NOT_STARTED'
+        ? '<div class="event-banner"><div class="event-banner-icon">!</div><div><strong>The event has not started yet.</strong><span>Stay ready. Mission controls will unlock as soon as the organizer starts the circuit.</span></div></div>'
+        : data.event.status === 'PAUSED'
+          ? '<div class="event-banner"><div class="event-banner-icon">Ⅱ</div><div><strong>The event is paused.</strong><span>Your progress is safe. We will resume your mission when the organizer starts the circuit again.</span></div></div>'
+          : data.event.status === 'ENDED'
+            ? '<div class="event-banner is-ended"><div class="event-banner-icon">✓</div><div><strong>The event has ended.</strong><span>The final standings are now locked. Open the results dialog below to return to the start.</span></div></div>'
+            : '';
+      if (data.event.status === 'ENDED' || complete) showFinalDialog(team, data, complete);
       const volunteerTypes = ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'];
       const locationRequired = challenge && volunteerTypes.includes(challenge.type);
        const waitingForVolunteer = locationRequired && !team.missionStarted;
@@ -991,7 +1053,7 @@
       const progressPercent = Math.min(100, Math.round((team.completed / totalMissions) * 100));
        const participantScore = mysteryQuiz ? '<div class="hero-score"><span>QUIZ IN PROGRESS</span></div>' : `<div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div>`;
        const participantPoints = mysteryQuiz ? '<div class="rank-row"><span class="rank-number">01</span><strong>Quiz status</strong><span>IN PROGRESS</span></div>' : `<div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div>`;
-       $('#view').innerHTML = `<div class="team-layout"><section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
+       $('#view').innerHTML = `<div class="team-layout">${eventNotice}<section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together.</p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Scoreboard snapshot</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span>${formatTime(team.totalSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Live teams</strong><span>${data.leaderboard.length}+</span></div></section></div></div>`;
        if ($('#startMission')) $('#startMission').addEventListener('click', startMission);
       if ($('#submitAnswer')) $('#submitAnswer').addEventListener('click', submitAnswer);
        document.querySelectorAll('.mission-quiz-answer').forEach((input) => input.addEventListener('change', submitAnswer));
@@ -999,6 +1061,8 @@
         if (team.missionStarted && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
         else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(1000);
     }
+    $('#finalDialogReturn').addEventListener('click', logout);
+    $('#finalDialogBoard').addEventListener('click', () => { $('#eventEndedDialog').close(); state.view = 'teamboard'; render(); });
     async function renderOrganizer() {
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
       const data = await api('/api/organizer/checkpoint-teams');
