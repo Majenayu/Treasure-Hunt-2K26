@@ -546,6 +546,10 @@ function normalizeTeamName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function normalizeTeamId(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 function teamNameKey(value) {
   return normalizeTeamName(value).toLocaleLowerCase();
 }
@@ -1155,6 +1159,7 @@ function publicTeam(team) {
   const challenge = getTeamChallenge(team);
   const safeChallenge = publicChallenge(challenge);
   const missionStarted = Boolean(safeChallenge && team.currentChallenge === challenge.id && team.startedAt);
+  const routeSeconds = team.totalSeconds + (missionStarted ? secondsOnMission(team) : 0);
   const assignedSet = challenge && ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)
     ? assignQuestionSet(team, challenge)
     : null;
@@ -1182,6 +1187,7 @@ function publicTeam(team) {
     name: team.name,
     score: team.score,
     totalSeconds: team.totalSeconds,
+    routeSeconds,
     currentIndex: team.currentIndex,
     completed: team.completedChallenges.length,
     totalMissions: team.route.length,
@@ -1289,8 +1295,8 @@ app.post('/api/login', async (req, res, next) => {
       return res.json({ token, user });
     }
 
-    const teamId = username.trim().toUpperCase();
-    if (!/^TEAM[-_][A-Z0-9_-]{1,48}$/.test(teamId)) {
+    const teamId = normalizeTeamId(username);
+    if (!/^TEAM-[A-Z0-9][A-Z0-9_-]{0,48}$/.test(teamId)) {
       return res.status(400).json({ error: 'Use a team code such as TEAM-01.' });
     }
     const teamName = normalizeTeamName(submittedTeamName);
@@ -1370,7 +1376,10 @@ app.get('/api/game-state', (req, res) => {
   });
 });
 
-app.get('/api/leaderboard', (req, res) => res.json({ leaderboard: leaderboard() }));
+app.get('/api/leaderboard', requireAuth, (req, res) => {
+  if (req.user.role === 'team') return res.status(403).json({ error: 'The leaderboard is available to event staff only.' });
+  res.json({ leaderboard: leaderboard() });
+});
 
 app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
   res.json(overview());
@@ -1689,9 +1698,11 @@ app.get('/api/team/state', requireAuth, (req, res) => {
   if (req.user.role !== 'team') return res.status(403).json({ error: 'Team access required.' });
   ensureSurpriseRounds();
   const team = teams.get(req.user.teamId);
-  const board = leaderboard();
-  const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
-  res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), isTopFinisher: Number(teamRank) > 0 && teamRank <= 3, event: state });
+  res.json({
+    team: teamPortalData(team),
+    liveTeamCount: [...teams.values()].filter((candidate) => candidate.active).length,
+    event: state,
+  });
 });
 
 app.post('/api/team/surprise/respond', requireAuth, (req, res) => {
