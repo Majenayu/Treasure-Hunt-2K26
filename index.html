@@ -715,7 +715,7 @@
             <input id="teamName" autocomplete="organization" placeholder="Enter your unique team name">
           </div>
           <div class="field">
-            <label for="password">Password <span id="passwordOptional"></span></label>
+            <label id="passwordLabel" for="password">Password <span id="passwordOptional"></span></label>
             <input id="password" type="password" autocomplete="current-password" placeholder="Enter password" required>
           </div>
           <button id="loginSubmit" class="primary wide" type="submit">Enter mission control <span aria-hidden="true">↗</span></button>
@@ -1149,14 +1149,16 @@
        $('#username').placeholder = role === 'admin' ? 'e.g. majen' : role === 'organizer' ? 'e.g. coding1' : 'e.g. TEAM-01';
       $('#teamNameField').classList.toggle('hidden', role !== 'team');
       $('#teamName').required = role === 'team';
-      $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Create or enter team password';
+       $('#passwordLabel').firstChild.textContent = role === 'team' ? 'Team password ' : 'Password ';
+       $('#password').placeholder = role === 'admin' ? 'Enter password' : role === 'organizer' ? 'Checkpoint password' : 'Enter play';
       $('#passwordOptional').textContent = '';
        $('#loginSubmit').firstChild.textContent = role === 'admin' ? 'Enter admin control ' : role === 'organizer' ? 'Enter volunteer console ' : 'Enter the hunt ';
        $('#loginNote').textContent = role === 'admin'
          ? 'Use the organizer access details provided to you.'
          : role === 'organizer'
            ? 'Use the checkpoint access details provided to you.'
-           : 'Use the same team code, team name, and password on every phone.';
+            : 'All teams use password: play. Use a unique team code/username and team name.';
+       if (role === 'team') $('#password').value = 'play';
     };
      const configureLoginPage = () => {
        const pageCopy = {

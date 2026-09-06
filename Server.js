@@ -17,6 +17,7 @@ const SURPRISE_ROUND_DURATION_MS = 10 * 60 * 1000;
 const SURPRISE_TEAM_LIMIT = 5;
 const SURPRISE_MAX_REJECTIONS = 3;
 const SURPRISE_POINT_OPTIONS = [50, 75, 100, 125, 150, 175, 200];
+const TEAM_DEFAULT_PASSWORD = 'play';
 const ADMIN_USERNAME = 'majen';
 const ADMIN_PASSWORD = 'majen';
 const ORGANIZER_ACCOUNTS = {
@@ -1318,26 +1319,23 @@ app.post('/api/login', async (req, res, next) => {
     if (teamName.length < 2 || teamName.length > 48) {
       return res.status(400).json({ error: 'Team name must be between 2 and 48 characters.' });
     }
-    if (!password || typeof password !== 'string') {
-      return res.status(400).json({ error: 'A team password is required.' });
-    }
-    if (password.length < 4 || password.length > 128) {
-      return res.status(400).json({ error: 'Team password must be between 4 and 128 characters.' });
+    if (password !== TEAM_DEFAULT_PASSWORD) {
+      return res.status(401).json({ error: 'Use the default team password: play.' });
     }
     let team = teams.get(teamId);
     if (!team) {
       if (findTeamByName(teamName)) {
         return res.status(409).json({ error: 'That team name is already registered. Choose a different name.' });
       }
-      team = createTeam(teamId, teamName, password);
+      team = createTeam(teamId, teamName, TEAM_DEFAULT_PASSWORD);
     } else {
       if (teamNameKey(team.name) !== teamNameKey(teamName)) {
         return res.status(401).json({ error: 'That team name is not recognised for this team code.' });
       }
-      if (!team.passwordHash) {
-        team.passwordHash = hashTeamPassword(password);
-      } else if (!verifyTeamPassword(password, team.passwordHash)) {
-        return res.status(401).json({ error: 'That team password is not recognised.' });
+      // Team credentials are intentionally uniform for event-day access. Rehash
+      // existing accounts so teams created with an older password can use play.
+      if (!verifyTeamPassword(TEAM_DEFAULT_PASSWORD, team.passwordHash)) {
+        team.passwordHash = hashTeamPassword(TEAM_DEFAULT_PASSWORD);
       }
     }
     const user = { role: 'team', teamId };

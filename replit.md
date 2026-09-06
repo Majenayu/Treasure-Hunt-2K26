@@ -13,7 +13,7 @@ It listens on the `PORT` environment variable and defaults to port `5000` for Re
 ## Access
 
 - Admin and volunteer access details are provided privately to event staff.
-- Team login: enter a team code in the format `TEAM-...`, a unique team name, and a required team password. Team codes are normalized to uppercase, so `team-01`, `Team-01`, and `TEAM-01` open the same account. The same three values can be used on multiple phones to open the same team account. A team name cannot be registered twice.
+- Team login: enter a unique team code/username in the format `TEAM-...`, a unique team name, and the default password `play`. Team codes are normalized to uppercase, so `team-01`, `Team-01`, and `TEAM-01` open the same account. The same three values can be used on multiple phones to open the same team account. A team name cannot be registered twice.
 
 ## Current storage model
 
