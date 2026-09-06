@@ -732,6 +732,17 @@ function publicTeam(team) {
   };
 }
 
+function teamPortalData(team) {
+  const payload = publicTeam(team);
+  if (state.status !== 'LIVE') {
+    payload.currentChallenge = null;
+    payload.missionStarted = false;
+    payload.missionStartedAt = null;
+    payload.missionSeconds = 0;
+  }
+  return payload;
+}
+
 function completeChallenge(team, challenge, elapsed, earnedPoints) {
   team.score += earnedPoints;
   team.totalSeconds += elapsed;
@@ -851,7 +862,7 @@ app.get('/api/me', requireAuth, (req, res) => res.json(req.user));
 
 app.get('/api/session', requireAuth, (req, res) => {
   const team = req.user.role === 'team' ? teams.get(req.user.teamId) : null;
-  res.json({ user: req.user, team: team ? publicTeam(team) : null });
+  res.json({ user: req.user, team: team ? teamPortalData(team) : null });
 });
 
 app.get('/api/game-state', (req, res) => {
@@ -1140,7 +1151,7 @@ app.get('/api/team/state', requireAuth, (req, res) => {
   const team = teams.get(req.user.teamId);
   const board = leaderboard();
   const teamRank = board.find((entry) => entry.id === team.id)?.rank || null;
-  res.json({ team: publicTeam(team), leaderboard: board.slice(0, 5), teamRank, event: state });
+  res.json({ team: teamPortalData(team), leaderboard: board.slice(0, 5), teamRank, event: state });
 });
 
 app.get('/api/riddle-qr/:id', requireAuth, async (req, res) => {

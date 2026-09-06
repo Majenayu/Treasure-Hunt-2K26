@@ -222,6 +222,13 @@
     .event-banner span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .event-banner.is-ended { border-color: rgba(45,139,104,.35); background: rgba(45,139,104,.1); }
     .event-banner.is-ended .event-banner-icon { background: var(--green); }
+    .event-gate { min-height: calc(100vh - 190px); display: grid; place-items: center; }
+    .event-gate-card { width: min(620px, 100%); padding: 42px 34px; border: 1px solid rgba(242,106,61,.25); border-radius: 26px; text-align: center; background: radial-gradient(circle at 50% 0, rgba(242,106,61,.16), transparent 58%), var(--card); box-shadow: var(--shadow); }
+    .event-gate-icon { display: grid; place-items: center; width: 70px; height: 70px; margin: 0 auto 20px; border: 1px solid rgba(242,174,67,.55); border-radius: 22px; color: #ffd38a; background: rgba(242,174,67,.12); font: 700 30px 'Space Grotesk'; }
+    .event-gate-card h2 { margin: 0; font: 700 clamp(28px, 5vw, 42px) 'Space Grotesk'; letter-spacing: -.07em; }
+    .event-gate-card p { max-width: 430px; margin: 12px auto 0; color: var(--muted); line-height: 1.6; }
+    .team-event-gated .nav { opacity: .35; pointer-events: none; }
+    .team-event-ended { visibility: hidden; pointer-events: none; }
     .final-dialog { width: min(520px, calc(100% - 28px)); border: 1px solid rgba(242,106,61,.3); border-radius: 24px; padding: 0; color: #eaf0ff; background: #080d1a; box-shadow: 0 25px 90px rgba(0,0,0,.48); }
     .final-dialog::backdrop { background: rgba(2,5,15,.76); backdrop-filter: blur(5px); }
     .final-dialog-content { padding: 30px; text-align: center; }
@@ -701,7 +708,6 @@
       <p id="finalDialogMessage"></p>
       <div class="final-dialog-rank"><strong id="finalDialogRank">—</strong><span id="finalDialogRankLabel">FINAL PLACE</span></div>
       <div class="final-dialog-actions">
-        <button id="finalDialogBoard" class="outline" type="button">View standings ↗</button>
         <button id="finalDialogReturn" class="primary" type="button">Return to start ↗</button>
       </div>
     </div>
@@ -912,6 +918,7 @@
       clearScheduledRefresh();
        clearInterval(state.timer);
        state.timer = null;
+      $('#app').classList.remove('team-event-gated', 'team-event-ended');
        const renderKey = `${state.role}:${state.view}`;
        state.animateView = state.lastRenderKey !== renderKey;
        state.lastRenderKey = renderKey;
@@ -1042,9 +1049,21 @@
       const team = data.team;
       const totalMissions = team.totalMissions || 10;
       $('#eventStatus').innerHTML = `<span class="dot"></span> CIRCUIT ${data.event.status}`;
-      if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
       const challenge = team.currentChallenge;
       const complete = team.completed >= totalMissions;
+      if (data.event.status === 'NOT_STARTED') {
+        $('#app').classList.add('team-event-gated');
+        $('#view').innerHTML = `<div class="event-gate"><section class="event-gate-card"><div class="event-gate-icon">!</div><h2>The event has not started</h2><p>Mission controls are locked for now. Stay with your team and wait for the organizer to start TechHunt 2026. Your clues will appear here when the circuit goes live.</p></section></div>`;
+        scheduleRender(3000);
+        return;
+      }
+      if (data.event.status === 'ENDED') {
+        $('#app').classList.add('team-event-ended');
+        $('#view').innerHTML = '';
+        showFinalDialog(team, data, false);
+        return;
+      }
+      if (state.view === 'teamboard') { renderLeaderboard(data.leaderboard); return; }
       const eventNotice = data.event.status === 'NOT_STARTED'
         ? '<div class="event-banner"><div class="event-banner-icon">!</div><div><strong>The event has not started yet.</strong><span>Stay ready. Mission controls will unlock as soon as the organizer starts the circuit.</span></div></div>'
         : data.event.status === 'PAUSED'
@@ -1052,7 +1071,6 @@
           : data.event.status === 'ENDED'
             ? '<div class="event-banner is-ended"><div class="event-banner-icon">✓</div><div><strong>The event has ended.</strong><span>The final standings are now locked. Open the results dialog below to return to the start.</span></div></div>'
             : '';
-      if (data.event.status === 'ENDED' || complete) showFinalDialog(team, data, complete);
       const volunteerTypes = ['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'];
       const locationRequired = challenge && volunteerTypes.includes(challenge.type);
        const waitingForVolunteer = locationRequired && !team.missionStarted;
@@ -1123,7 +1141,6 @@
         else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(1000);
     }
     $('#finalDialogReturn').addEventListener('click', logout);
-    $('#finalDialogBoard').addEventListener('click', () => { $('#eventEndedDialog').close(); state.view = 'teamboard'; render(); });
     async function renderOrganizer() {
       if (state.view === 'leaderboard') { renderLeaderboard((await api('/api/leaderboard')).leaderboard); return; }
       const data = await api('/api/organizer/checkpoint-teams');
