@@ -1116,6 +1116,8 @@ function publicSurpriseForTeam(team) {
       ? 'Your team has been called to M510 for a Surprise Round. You have 10 minutes to report and choose Accept or Reject.'
       : entry.status === 'ACCEPTED'
         ? 'Report to M510. The special volunteer will verify your team and record your bonus after the round.'
+        : entry.status === 'AWAITING_AWARD'
+          ? 'Your team completed the M510 round. The special volunteer is ready to record the bonus points.'
         : entry.status === 'AWARDED'
           ? `Surprise Round complete. ${entry.points} bonus points were added to your score.`
           : entry.status === 'LOST'
@@ -1124,6 +1126,16 @@ function publicSurpriseForTeam(team) {
               ? 'The Surprise Round window closed before your team accepted the offer.'
               : 'Your Surprise Round response has been recorded.',
   };
+}
+
+function activeAcceptedSurpriseForTeam(team) {
+  const round = [...(state.surpriseRounds || [])]
+    .reverse()
+    .find((candidate) => {
+      const entry = surpriseRoundEntry(candidate, team?.id);
+      return entry && ['ACCEPTED', 'AWAITING_AWARD'].includes(entry.status);
+    });
+  return round ? { round, entry: surpriseRoundEntry(round, team.id) } : null;
 }
 
 function secondsOnMission(team) {
@@ -1773,6 +1785,9 @@ app.post('/api/team/start', requireAuth, (req, res) => {
     return res.status(409).json({ error: state.status === 'NOT_STARTED' ? 'The event has not started yet.' : state.status === 'ENDED' ? 'The event has ended.' : 'The circuit is currently paused.' });
   }
   const team = teams.get(req.user.teamId);
+  if (activeAcceptedSurpriseForTeam(team)) {
+    return res.status(409).json({ error: 'Your Surprise Round is active. Complete the M510 special task before returning to your route.' });
+  }
   const challenge = getTeamChallenge(team);
   if (!challenge) return res.status(409).json({ error: 'Your circuit is complete.' });
   if (challenge.disabled) return res.status(409).json({ error: 'This station is temporarily offline.' });
@@ -1872,6 +1887,9 @@ app.post('/api/team/submit', requireAuth, (req, res) => {
     return res.status(409).json({ error: state.status === 'NOT_STARTED' ? 'The event has not started yet.' : state.status === 'ENDED' ? 'The event has ended.' : 'The circuit is currently paused.' });
   }
   const team = teams.get(req.user.teamId);
+  if (activeAcceptedSurpriseForTeam(team)) {
+    return res.status(409).json({ error: 'Your Surprise Round is active. Complete the M510 special task before returning to your route.' });
+  }
   const challenge = getTeamChallenge(team);
   if (!challenge || team.currentChallenge !== challenge.id || !team.startedAt) {
     return res.status(409).json({ error: 'Unlock the station before submitting.' });

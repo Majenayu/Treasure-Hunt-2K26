@@ -888,11 +888,16 @@
           const routeTime = formatTime(live.team.routeSeconds);
           element.textContent = routeTime;
           if ($('#teamRouteTimerSummary')) $('#teamRouteTimerSummary').textContent = routeTime;
+          if ($('#specialTaskTimer')) {
+            const specialSeconds = Math.max(0, Math.ceil((new Date(live.team.surpriseRound?.closesAt || 0).getTime() - Date.now()) / 1000));
+            $('#specialTaskTimer').textContent = formatTime(specialSeconds);
+          }
           showSurpriseRound(live.team.surpriseRound);
         } catch (_) {
           const routeTime = formatTime(team.routeSeconds);
           element.textContent = routeTime;
           if ($('#teamRouteTimerSummary')) $('#teamRouteTimerSummary').textContent = routeTime;
+          if ($('#specialTaskTimer')) $('#specialTaskTimer').textContent = formatTime(0);
         }
       };
       state.routeTimer = setInterval(update, 3000);
@@ -1346,6 +1351,7 @@
        $('#app').classList.remove('team-event-gated', 'team-event-ended');
       $('#eventStatus').innerHTML = `<span class="dot"></span> CIRCUIT ${data.event.status}`;
       const challenge = team.currentChallenge;
+      const specialTaskActive = ['ACCEPTED', 'AWAITING_AWARD'].includes(team.surpriseRound?.status) && !team.surpriseRound.awarded;
       const complete = team.completed >= totalMissions;
       if (data.event.status === 'NOT_STARTED') {
         $('#app').classList.add('team-event-gated');
@@ -1428,10 +1434,12 @@
       const missionContent = complete
         ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ${totalMissions} stations. Your time and score have been recorded for the event staff.</p>`
          : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.missionStarted ? activeContent : waitingContent}`;
+      const specialMissionContent = `<div class="mission-kicker">SPECIAL TASK · M510</div><h3>Surprise Round</h3><p class="mission-prompt">Report to M510 and complete the special volunteer’s task. Your regular route task is paused while this round is active.</p><div class="mission-meta"><span class="timer">ROUND TIME <strong id="specialTaskTimer">${formatTime(Math.max(0, Math.ceil((new Date(team.surpriseRound.closesAt).getTime() - Date.now()) / 1000)))}</strong></span><span class="tag">BONUS UP TO 200 POINTS</span></div><div class="event-banner" style="margin-top:24px"><div class="event-banner-icon">★</div><div><strong>${team.surpriseRound.status === 'AWAITING_AWARD' ? 'Task complete — awaiting score' : 'Your special task is live'}</strong><span>${escapeHtml(team.surpriseRound.prompt)}</span></div></div><p class="card-subtitle" style="margin-top:18px">Stay at M510 until the special volunteer verifies your team. Your normal mission timer will resume after the bonus is recorded.</p>`;
+      const missionPanelContent = specialTaskActive ? specialMissionContent : missionContent;
       const progressPercent = Math.min(100, Math.round((team.completed / totalMissions) * 100));
        const participantScore = mysteryQuiz ? '<div class="hero-score"><span>QUIZ IN PROGRESS</span></div>' : `<div class="hero-score"><strong>${team.score}</strong><span>points earned</span></div>`;
        const participantPoints = mysteryQuiz ? '<div class="rank-row"><span class="rank-number">01</span><strong>Quiz status</strong><span>IN PROGRESS</span></div>' : `<div class="rank-row"><span class="rank-number">01</span><strong>Points</strong><span>${team.score}</span></div>`;
-       $('#view').innerHTML = `<div class="team-layout">${eventNotice}<section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>Follow the route. Keep your team together. <span class="mono">TIME ON ROUTE <strong id="teamRouteTimer">${formatTime(team.routeSeconds)}</strong></span></p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">Your live score and timing</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span id="teamRouteTimerSummary">${formatTime(team.routeSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Teams in circuit</strong><span>${data.liveTeamCount || 0}</span></div></section></div></div>`;
+       $('#view').innerHTML = `<div class="team-layout">${eventNotice}<section class="team-hero"><div><div class="eyebrow">Welcome back · ${team.id}</div><h2>${escapeHtml(team.name)}</h2><p>${specialTaskActive ? 'Your Surprise Round is active at M510.' : 'Follow the route. Keep your team together.'} <span class="mono">TIME ON ROUTE <strong id="teamRouteTimer">${formatTime(team.routeSeconds)}</strong></span></p></div>${participantScore}</section><section class="progress-wrap"><div class="progress-top"><span>Mission progress</span><span>${team.completed} / ${totalMissions} cleared</span></div><div class="progress-track"><i style="width:${progressPercent}%"></i></div></section><div class="team-columns"><section class="card mission">${missionPanelContent}</section><section class="card"><div class="card-heading"><div><h2 class="card-title">Your run</h2><p class="card-subtitle">${specialTaskActive ? 'Surprise Round status' : 'Your live score and timing'}</p></div></div>${participantPoints}<div class="rank-row"><span class="rank-number">02</span><strong>Stations cleared</strong><span>${team.completed}/${totalMissions}</span></div><div class="rank-row"><span class="rank-number">03</span><strong>Time on route</strong><span id="teamRouteTimerSummary">${formatTime(team.routeSeconds)}</span></div><div class="rank-row"><span class="rank-number">04</span><strong>Teams in circuit</strong><span>${data.liveTeamCount || 0}</span></div></section></div></div>`;
        startTeamRouteTimer(team);
        showSurpriseRound(team.surpriseRound);
        if ($('#startMission')) $('#startMission').addEventListener('click', startMission);
