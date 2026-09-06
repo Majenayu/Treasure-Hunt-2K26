@@ -215,6 +215,13 @@
     .riddle-qr strong { display: block; color: #eaf0ff; font: 700 14px 'Space Grotesk'; margin-bottom: 6px; }
     .riddle-qr span { display: block; color: rgba(180,200,255,.68); font-size: 12px; line-height: 1.5; }
     .riddle-qr code { color: #ff956f; font: 500 12px 'DM Mono'; }
+    .qr-scanner-dialog { width: min(560px, calc(100% - 28px)); }
+    .qr-scanner-video { display: block; width: min(100%, 420px); aspect-ratio: 1; object-fit: cover; margin: 20px auto 12px; border: 1px solid rgba(242,106,61,.35); border-radius: 18px; background: #03050f; }
+    .qr-scanner-status { min-height: 20px; color: rgba(180,200,255,.7); font: 500 11px 'DM Mono'; }
+    .qr-manual { display: grid; gap: 8px; max-width: 340px; margin: 16px auto 0; text-align: left; }
+    .qr-manual label { color: rgba(180,200,255,.68); font: 500 10px 'DM Mono'; text-transform: uppercase; letter-spacing: .08em; }
+    .qr-manual input { width: 100%; border: 1px solid rgba(242,106,61,.22); border-radius: 9px; padding: 11px; color: #eaf0ff; background: #0d1628; outline: 0; font: 12px 'DM Mono'; text-transform: uppercase; }
+    .qr-manual input:focus { border-color: #f26a3d; box-shadow: 0 0 0 3px rgba(242,106,61,.13); }
     .toast { position: fixed; right: 24px; bottom: 24px; color: white; background: var(--ink); border-left: 4px solid var(--orange); border-radius: 10px; padding: 13px 16px; box-shadow: var(--shadow); font-size: 13px; z-index: 20; }
     .event-banner { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid rgba(242,106,61,.28); border-radius: 16px; background: linear-gradient(120deg, rgba(242,106,61,.12), rgba(242,174,67,.08)); }
     .event-banner-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px; color: #fff; background: var(--orange); font: 700 16px 'Space Grotesk'; }
@@ -241,6 +248,9 @@
     body.theme-light .final-dialog { color: var(--ink); background: var(--card); border-color: var(--line); box-shadow: 0 25px 80px rgba(49,28,15,.25); }
     body.theme-light .final-dialog p { color: var(--muted); }
     body.theme-light .final-dialog-rank strong { color: var(--ink); }
+    body.theme-light .qr-scanner-status,
+    body.theme-light .qr-manual label { color: var(--muted); }
+    body.theme-light .qr-manual input { color: var(--ink); background: #fffaf4; border-color: var(--line); }
     @media (max-width: 620px) {
       .event-banner { padding: 14px; }
       .final-dialog-content { padding: 25px 20px; }
@@ -728,22 +738,34 @@
       </div>
     </div>
   </dialog>
+  <dialog id="qrScannerDialog" class="final-dialog qr-scanner-dialog" aria-labelledby="qrScannerTitle">
+    <div class="final-dialog-content">
+      <div class="final-dialog-badge" aria-hidden="true">⌁</div>
+      <h2 id="qrScannerTitle">Scan the location QR</h2>
+      <p>Go to the physical riddle spot and point your camera at the QR placed there. The next riddle unlocks only after that QR is verified.</p>
+      <video id="qrScannerVideo" class="qr-scanner-video" playsinline muted></video>
+      <div id="qrScannerStatus" class="qr-scanner-status" role="status">Camera is starting…</div>
+      <div id="qrManual" class="qr-manual hidden">
+        <label for="qrManualCode">Camera unavailable? Enter the printed QR value</label>
+        <input id="qrManualCode" autocomplete="off" autocapitalize="characters" placeholder="Example: ECHO-12">
+        <button id="qrManualSubmit" class="outline" type="button">Verify code</button>
+      </div>
+      <div class="final-dialog-actions" style="margin-top:18px">
+        <button id="closeQrScanner" class="outline" type="button">Cancel</button>
+      </div>
+    </div>
+  </dialog>
 
   <script>
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=orange-v3').catch(() => {});
     const $ = (selector) => document.querySelector(selector);
-      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrCache: {}, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
+      const state = { token: localStorage.getItem('codehunt_token'), role: null, user: null, view: 'adminGame', timer: null, refreshTimer: null, clockTimer: null, expiringMission: false, qrScanner: null, qrScanInFlight: false, theme: localStorage.getItem('codehunt_theme') || 'dark', lastRenderKey: null, animateView: false, finalDialogShown: false, deferredInstallPrompt: null };
     const api = async (url, options = {}) => {
       const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...(options.headers || {}) } });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Something went wrong.');
       return data;
     };
-     const getRiddleQr = async (challenge) => {
-       if (!challenge?.id) return null;
-       if (!state.qrCache[challenge.id]) state.qrCache[challenge.id] = api(`/api/riddle-qr/${encodeURIComponent(challenge.id)}`);
-       return state.qrCache[challenge.id];
-     };
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
     const formatTime = (seconds) => {
       const value = Math.max(0, Number(seconds) || 0);
@@ -853,6 +875,72 @@
       setInstallButtonVisibility();
       showToast('TechHunt was installed successfully.');
     });
+    const normalizeQrValue = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      try {
+        const url = new URL(raw);
+        return url.searchParams.get('stationCode') || raw;
+      } catch (_) {
+        return raw;
+      }
+    };
+    const stopQrScanner = () => {
+      if (state.qrScanner) {
+        state.qrScanner.stop();
+        state.qrScanner.destroy();
+        state.qrScanner = null;
+      }
+      state.qrScanInFlight = false;
+    };
+    const submitStationCode = async (value) => {
+      const stationCode = normalizeQrValue(value);
+      if (!stationCode) {
+        showToast('No QR value was detected. Try again at the physical location.');
+        return;
+      }
+      try {
+        await api('/api/team/start', { method: 'POST', body: JSON.stringify({ stationCode }) });
+        showToast('Location QR verified. Your next riddle is live.');
+        render();
+      } catch (error) {
+        showToast(error.message);
+      }
+    };
+    const openQrScanner = async () => {
+      const dialog = $('#qrScannerDialog');
+      const video = $('#qrScannerVideo');
+      const status = $('#qrScannerStatus');
+      $('#qrManual').classList.add('hidden');
+      $('#qrManualCode').value = '';
+      status.textContent = 'Camera is starting…';
+      if (!dialog.open) dialog.showModal();
+      try {
+        const qrModule = await import('/node_modules/qr-scanner/qr-scanner.min.js');
+        const QrScanner = qrModule.default;
+        QrScanner.WORKER_PATH = '/node_modules/qr-scanner/qr-scanner-worker.min.js';
+        const scanner = new QrScanner(video, (result) => {
+          const value = typeof result === 'string' ? result : result?.data;
+          if (!value || state.qrScanInFlight) return;
+          state.qrScanInFlight = true;
+          stopQrScanner();
+          dialog.close();
+          submitStationCode(value).finally(() => { state.qrScanInFlight = false; });
+        }, {
+          returnDetailedScanResult: true,
+          preferredCamera: 'environment',
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+        });
+        state.qrScanner = scanner;
+        await scanner.start();
+        status.textContent = 'Point your camera at the physical QR placed at this spot.';
+      } catch (_) {
+        stopQrScanner();
+        status.textContent = 'Camera access is unavailable on this device.';
+        $('#qrManual').classList.remove('hidden');
+      }
+    };
     function showFinalDialog(team, data, complete) {
       if (state.finalDialogShown) return;
       state.finalDialogShown = true;
@@ -1078,10 +1166,6 @@
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
        const waitingForRiddleScan = challenge?.type === 'RIDDLE' && (!team.missionStarted || riddleScanRequired);
-       const riddleQr = waitingForRiddleScan ? await getRiddleQr(challenge) : null;
-       const qrMarkup = riddleQr
-         ? `<div class="riddle-qr"><img src="${riddleQr.dataUrl}" alt="QR code for ${escapeHtml(challenge.name)}"><div><strong>Scan this riddle QR</strong><span>Use the checkpoint QR to unlock pass ${challenge.riddleStep || 1}.</span><span>Fallback code: <code>${escapeHtml(riddleQr.stationCode)}</code></span></div></div>`
-         : '';
       const questionCards = (challenge?.questions || []).map((question, index) => {
         const answerControl = volunteerScored
           ? '<span class="tag">Score recorded by volunteer</span>'
@@ -1113,14 +1197,14 @@
          : challenge?.questionSet;
        const assignedSetTotal = challenge?.type === 'CODING' ? 10 : challenge?.type === 'MYSTERY' ? 20 : 3;
        const waitingContent = waitingForRiddleScan
-         ? `<div class="mission-kicker">QR scan required</div><h3>Unlock the riddle.</h3>${qrMarkup}<p class="mission-prompt">Scan the checkpoint QR to unlock pass ${challenge.riddleStep || 1}. If your camera cannot scan it, enter the fallback code.</p><button id="startMission" data-riddle="true" class="primary">Scan / enter QR ↗</button>`
+         ? `<div class="mission-kicker">Physical QR scan required</div><h3>Go to the riddle spot.</h3><p class="mission-prompt">Find the QR placed at the live location, then scan it with your camera. Pass ${challenge.riddleStep || 1} will unlock only after that physical QR is verified.</p><button id="startMission" data-riddle="true" class="primary">Open camera scanner ↗</button>`
          : waitingForVolunteer
          ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
          : challenge?.type === 'RIDDLE'
             ? `<p class="mission-prompt">Scan the checkpoint QR to unlock the first riddle pass.</p>`
            : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
        const activeContent = riddleScanRequired
-          ? `<div class="mission-kicker">QR scan required</div>${qrMarkup}<p class="mission-prompt">Scan the checkpoint QR to unlock pass ${challenge.riddleStep}.</p><button id="startMission" data-riddle="true" class="primary">Scan / enter QR ↗</button>`
+          ? `<div class="mission-kicker">Physical QR scan required</div><p class="mission-prompt">Go to the next riddle spot and scan the QR placed there. The next pass will unlock only after the physical QR is verified.</p><button id="startMission" data-riddle="true" class="primary">Open camera scanner ↗</button>`
          : volunteerScored
          ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
          : mysteryQuiz
@@ -1174,9 +1258,13 @@
     }
     async function startMission(event) {
       const isRiddle = event?.currentTarget?.dataset?.riddle === 'true';
-       const code = prompt(isRiddle ? 'Scan the riddle QR or enter its fallback code:' : 'Enter the station code from the location:', '');
+      if (isRiddle) {
+        openQrScanner();
+        return;
+      }
+       const code = prompt('Enter the station code from the location:', '');
       if (!code) return;
-      try { await api('/api/team/start', { method: 'POST', body: JSON.stringify({ stationCode: code }) }); showToast('Station unlocked. Your mission is live.'); render(); } catch (error) { showToast(error.message); }
+      await submitStationCode(code);
     }
     async function submitAnswer() {
       try {
@@ -1201,6 +1289,14 @@
        } else { showToast('That answer was not accepted. Try again.'); }
       } catch (error) { showToast(error.message); }
     }
+    $('#closeQrScanner').addEventListener('click', () => { stopQrScanner(); $('#qrScannerDialog').close(); });
+    $('#qrScannerDialog').addEventListener('close', stopQrScanner);
+    $('#qrManualSubmit').addEventListener('click', async () => {
+      const code = $('#qrManualCode').value;
+      stopQrScanner();
+      $('#qrScannerDialog').close();
+      await submitStationCode(code);
+    });
     (async () => {
       if (!state.token) return;
       try { const data = await api('/api/session'); state.user = data.user; state.role = data.user.role; showApp(); } catch (_) { localStorage.removeItem('codehunt_token'); }

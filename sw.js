@@ -2,7 +2,13 @@
 // Caches static assets, serves API fresh from network, handles push notifications
 
 const CACHE_NAME = 'techhunt-orange-v3';
-const STATIC_ASSETS = ['/', '/manifest.json', '/techhunt-mark.svg'];
+const STATIC_ASSETS = [
+  '/',
+  '/manifest.json',
+  '/techhunt-mark.svg',
+  '/node_modules/qr-scanner/qr-scanner.min.js',
+  '/node_modules/qr-scanner/qr-scanner-worker.min.js',
+];
 
 // Install: cache the shell
 self.addEventListener('install', e => {
