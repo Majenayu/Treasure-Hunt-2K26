@@ -1451,11 +1451,12 @@
          ? challenge.quizRound
          : challenge?.questionSet;
        const assignedSetTotal = challenge?.type === 'CODING' ? 10 : challenge?.type === 'MYSTERY' ? 20 : 3;
+        const waitingContent = waitingForVolunteer
+          ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
+          : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
         const riddleContent = challenge?.type === 'RIDDLE'
           ? `<div class="mission-kicker">${riddleScanRequired ? 'Riddle clue' : 'QR verified · next clue ready'}</div><h3>${riddleScanRequired ? 'Find the next spot.' : 'Next riddle unlocked.'}</h3>${questionCards}<p class="card-subtitle" style="margin-top:14px">Use the riddle clue to find the physical spot. Scan the QR there to reveal the next riddle.</p><button id="startMission" data-riddle="true" class="primary">Scan spot QR ↗</button>`
-         : waitingForVolunteer
-         ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
-          : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
+          : '';
         const activeContent = challenge?.type === 'RIDDLE'
           ? riddleContent
           : volunteerScored
