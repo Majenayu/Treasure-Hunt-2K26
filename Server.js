@@ -980,7 +980,6 @@ function assignedQuestions(team, challenge) {
   }
   const assignment = team.questionAssignments[challenge.id] ?? 0;
   if (challenge.type === 'RIDDLE') {
-    if (!team.riddleScanUnlocked?.[challenge.id]) return [];
     const riddles = challenge.questionSets[0] || [];
     const step = Math.min(team.riddleProgress?.[challenge.id] || 0, Math.max(0, riddles.length - 1));
     return riddles[step] ? [riddles[step]] : [];
@@ -1148,12 +1147,26 @@ function secondsOnMission(team) {
 
 function unlockRiddle(team, challenge) {
   if (!team || !challenge || challenge.type !== 'RIDDLE' || state.status !== 'LIVE') return;
+  if (!team.riddleProgress) team.riddleProgress = {};
+  if (!team.riddleScanUnlocked) team.riddleScanUnlocked = {};
   assignQuestionSet(team, challenge);
   team.currentChallenge = challenge.id;
   team.startedAt = new Date().toISOString();
   team.startedPauseSeconds = state.totalPausedSeconds;
+  const step = team.riddleProgress?.[challenge.id] || 0;
+  const total = challenge.questionSets[0]?.length || 3;
+  const nextStep = step + 1;
+  if (nextStep < total) {
+    team.riddleProgress[challenge.id] = nextStep;
+    team.riddleScanUnlocked[challenge.id] = false;
+    writeAudit('RIDDLE SCANNED', `${team.id} advanced to riddle ${nextStep + 1}/${total} in ${challenge.name}`, team.id);
+    return false;
+  }
+  team.riddleProgress[challenge.id] = total;
   team.riddleScanUnlocked[challenge.id] = true;
-  writeAudit('RIDDLE SCANNED', `${team.id} unlocked ${challenge.name} pass ${(team.riddleProgress?.[challenge.id] || 0) + 1}`, team.id);
+  completeChallenge(team, challenge, secondsOnMission(team), challenge.points);
+  writeAudit('RIDDLE COMPLETED', `${team.id} completed ${challenge.name}`, team.id);
+  return true;
 }
 
 function riddleCodesFor(challenge) {
@@ -1187,11 +1200,16 @@ function publicTeam(team) {
   } else if (assignedSet !== null) {
     safeChallenge.questionSet = assignedSet + 1;
   }
+  if (safeChallenge?.type === 'RIDDLE') {
+    safeChallenge.questions = assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
+  }
   if (missionStarted) {
     if (challenge.type === 'MYSTERY') {
       safeChallenge.quizQuestion = (team.mysteryProgress?.[challenge.id] || 0) + 1;
     }
-    safeChallenge.questions = ['LOGIC', 'PUZZLE'].includes(challenge.type)
+    safeChallenge.questions = challenge.type === 'RIDDLE'
+      ? safeChallenge.questions
+      : ['LOGIC', 'PUZZLE'].includes(challenge.type)
       ? []
       : assignedQuestions(team, challenge).map(({ answer, ...question }) => question);
   }
@@ -1809,8 +1827,8 @@ app.post('/api/team/start', requireAuth, (req, res) => {
       });
     }
     team.qrLockedUntil = 0;
-    unlockRiddle(team, challenge);
-    return res.json({ ok: true, team: publicTeam(team) });
+    const completed = unlockRiddle(team, challenge);
+    return res.json({ ok: true, riddleCompleted: completed, team: publicTeam(team) });
   }
   if (['CODING', 'LOGIC', 'PUZZLE', 'MYSTERY'].includes(challenge.type)) {
     return res.status(409).json({ error: 'A location volunteer must verify your team before this mission starts.' });

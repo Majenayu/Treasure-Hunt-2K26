@@ -781,7 +781,7 @@
     <div class="final-dialog-content">
       <div class="final-dialog-badge" aria-hidden="true">⌁</div>
       <h2 id="qrScannerTitle">Scan the location QR</h2>
-      <p>Go to the physical riddle spot and point your camera at the QR placed there. The next riddle unlocks only after that QR is verified.</p>
+      <p>Use the riddle clue to find the physical spot, then point your camera at the QR placed there. The next riddle appears after that QR is verified.</p>
       <video id="qrScannerVideo" class="qr-scanner-video" playsinline muted></video>
       <div id="qrScannerStatus" class="qr-scanner-status" role="status">Camera is starting…</div>
       <div id="qrManual" class="qr-manual">
@@ -1085,8 +1085,8 @@
         return;
       }
       try {
-        await api('/api/team/start', { method: 'POST', body: JSON.stringify({ stationCode }) });
-        showToast('Location QR verified. Your next riddle is live.');
+        const data = await api('/api/team/start', { method: 'POST', body: JSON.stringify({ stationCode }) });
+        showToast(data.riddleCompleted ? 'Riddle round complete. Next station unlocked.' : 'Location QR verified. Your next riddle is live.');
         render();
       } catch (error) {
         if (error.code === 'QR_LOCKED' || error.retryAfterSeconds) showQrLockout(error.retryAfterSeconds);
@@ -1385,9 +1385,10 @@
       const volunteerScored = challenge && ['LOGIC', 'PUZZLE'].includes(challenge.type);
        const mysteryQuiz = challenge?.type === 'MYSTERY';
        const riddleScanRequired = challenge?.type === 'RIDDLE' && challenge.riddleScanRequired;
-       const waitingForRiddleScan = challenge?.type === 'RIDDLE' && (!team.missionStarted || riddleScanRequired);
       const questionCards = (challenge?.questions || []).map((question, index) => {
-        const answerControl = volunteerScored
+         const answerControl = challenge.type === 'RIDDLE'
+           ? ''
+           : volunteerScored
           ? '<span class="tag">Score recorded by volunteer</span>'
           : question.options
             ? `<div class="quiz-options">${question.options.map((option) => `<label class="quiz-option"><input type="radio" name="quiz-${index}" class="mission-quiz-answer" data-answer-index="${index}" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join('')}</div>`
@@ -1413,21 +1414,19 @@
             : '';
       const timerLabel = challenge?.timeLimit ? `${formatTime(Math.max(0, challenge.timeLimit - team.missionSeconds))} remaining` : 'No timer';
       const locationInfo = challenge?.type === 'RIDDLE'
-          ? `<div class="mission-location">⌁ Riddle path · scan the checkpoint QR before pass ${challenge.riddleStep || 1}</div>`
+           ? `<div class="mission-location">⌁ Riddle clue · scan the spot QR to reveal pass ${challenge.riddleStep || 1}</div>`
         : `<div class="mission-location">⌖ ${escapeHtml(challenge?.location || '')} · <span class="mono">${escapeHtml(challenge?.stationCode || '')}</span></div>`;
        const assignedSet = challenge?.type === 'MYSTERY'
          ? challenge.quizRound
          : challenge?.questionSet;
        const assignedSetTotal = challenge?.type === 'CODING' ? 10 : challenge?.type === 'MYSTERY' ? 20 : 3;
-       const waitingContent = waitingForRiddleScan
-         ? `<div class="mission-kicker">Physical QR scan required</div><h3>Go to the riddle spot.</h3><p class="mission-prompt">Find the QR placed at the live location, then scan it with your camera. Pass ${challenge.riddleStep || 1} will unlock only after that physical QR is verified.</p><button id="startMission" data-riddle="true" class="primary">Open camera scanner ↗</button>`
+        const riddleContent = challenge?.type === 'RIDDLE'
+          ? `<div class="mission-kicker">${riddleScanRequired ? 'Riddle clue' : 'QR verified · next clue ready'}</div><h3>${riddleScanRequired ? 'Find the next spot.' : 'Next riddle unlocked.'}</h3>${questionCards}<p class="card-subtitle" style="margin-top:14px">Use the riddle clue to find the physical spot. Scan the QR there to reveal the next riddle.</p><button id="startMission" data-riddle="true" class="primary">Scan spot QR ↗</button>`
          : waitingForVolunteer
          ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
-         : challenge?.type === 'RIDDLE'
-            ? `<p class="mission-prompt">Scan the checkpoint QR to unlock the first riddle pass.</p>`
-           : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
+          : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
        const activeContent = riddleScanRequired
-          ? `<div class="mission-kicker">Physical QR scan required</div><p class="mission-prompt">Go to the next riddle spot and scan the QR placed there. The next pass will unlock only after the physical QR is verified.</p><button id="startMission" data-riddle="true" class="primary">Open camera scanner ↗</button>`
+          ? riddleContent
          : volunteerScored
          ? `<div class="mission-kicker">Assigned set ${challenge.questionSet || 1}</div><p class="mission-prompt">Work on the assigned ${escapeHtml(challenge.name)} set at the station. No question is entered in the team portal. The volunteer will record the score out of 10 to release the next clue.</p>`
          : mysteryQuiz
@@ -1435,7 +1434,7 @@
         : `${questionCards}<button id="submitAnswer" class="primary">${challenge.quizRound ? 'Submit quiz ↗' : challenge.type === 'RIDDLE' ? 'Submit pass ↗' : 'Submit answer ↗'}</button><p class="card-subtitle" style="margin-top:14px">${challenge.type === 'CODING' ? 'Your five-minute timer started when the volunteer verified your team.' : `Hint: ${escapeHtml(challenge.hint)}`}</p>`;
       const missionContent = complete
         ? `<div class="mission-kicker">Circuit complete</div><h3>Every signal decoded.</h3><p class="mission-prompt">You made it through all ${totalMissions} stations. Your time and score have been recorded for the event staff.</p>`
-         : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${team.missionStarted ? activeContent : waitingContent}`;
+         : `<div class="mission-kicker">Mission ${String(team.completed + 1).padStart(2, '0')} / ${totalMissions} · ${escapeHtml(challenge.type)}</div><h3>${escapeHtml(challenge.name)}</h3>${locationInfo}<div class="mission-meta"><span id="missionTimer" class="timer">${challenge.timeLimit ? timerLabel : 'Open time'}</span>${challenge.station ? `<span class="tag">${escapeHtml(challenge.station)}</span>` : ''}${roundLabel ? `<span class="tag">${roundLabel}</span>` : ''}</div>${challenge.type === 'RIDDLE' ? riddleContent : team.missionStarted ? activeContent : waitingContent}`;
       const specialMissionContent = specialTaskActive
         ? `<div class="mission-kicker">SPECIAL TASK · M510</div><h3>Surprise Round</h3><p class="mission-prompt">Report to M510 and complete the special volunteer’s task. Your regular route task is paused while this round is active.</p><div class="mission-meta"><span class="timer">ROUND TIME <strong id="specialTaskTimer">${formatTime(Math.max(0, Math.ceil((new Date(team.surpriseRound.closesAt).getTime() - Date.now()) / 1000)))}</strong></span><span class="tag">BONUS UP TO 200 POINTS</span></div><div class="event-banner" style="margin-top:24px"><div class="event-banner-icon">★</div><div><strong>${team.surpriseRound.status === 'AWAITING_AWARD' ? 'Task complete — awaiting score' : 'Your special task is live'}</strong><span>${escapeHtml(team.surpriseRound.prompt)}</span></div></div><p class="card-subtitle" style="margin-top:18px">Stay at M510 until the special volunteer verifies your team. Your normal mission timer will resume after the bonus is recorded.</p>`
         : '';
