@@ -1484,7 +1484,7 @@
         if (team.missionStarted && challenge.timeLimit) startMissionTimer(team, challenge, data.event);
         if (team.surpriseRound?.canRespond) scheduleRender(1000);
         else if (!team.missionStarted || riddleScanRequired || volunteerScored) scheduleRender(1000);
-        else if (!complete) scheduleRender(5000);
+         else if (!complete && challenge?.type !== 'CODING') scheduleRender(5000);
     }
     $('#finalDialogReturn').addEventListener('click', logout);
     async function renderSpecialVolunteer() {
@@ -1504,7 +1504,10 @@
               : canAward
                 ? `<div class="score-entry"><select class="special-award-select" data-round="${round.id}" data-team="${team.teamId}" aria-label="Bonus points for ${escapeHtml(team.teamName)}">${awardOptions}</select><button class="outline special-award" data-round="${round.id}" data-team="${team.teamId}">Award</button></div>`
                 : `<span class="tag">${escapeHtml(status)}</span>`;
-          return `<div class="challenge-row volunteer-row"><span class="challenge-index">${escapeHtml(team.teamId.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.teamName)} <span class="team-id">${escapeHtml(team.teamId)}</span></strong><span>${team.completed}/${team.totalMissions} cleared · ${team.score} points · ${escapeHtml(status)}</span></div>${action}</div>`;
+           const transition = team.triggeredAfter
+             ? `Invited after ${escapeHtml(team.triggeredAfter)} · next: ${escapeHtml(team.nextChallenge || 'finish')}`
+             : 'Assigned at a station transition';
+           return `<div class="challenge-row volunteer-row"><span class="challenge-index">${escapeHtml(team.teamId.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.teamName)} <span class="team-id">${escapeHtml(team.teamId)}</span></strong><span>${team.completed}/${team.totalMissions} cleared · ${team.score} points · ${escapeHtml(status)}</span><small class="card-subtitle">${transition}</small></div>${action}</div>`;
         }).join('') : '<div class="empty-state"><strong>No eligible teams were available.</strong><span>This slot is recorded; teams joining later will be considered in the next 10-minute slot.</span></div>';
         const closeLabel = roundClosed ? 'CLOSED' : `OPEN · closes ${new Date(round.closesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         return `<div class="special-round-card"><div class="card-heading"><div><h3>Surprise Round ${round.number}</h3><p class="card-subtitle">M510 · ${round.teams.length} team${round.teams.length === 1 ? '' : 's'} selected</p></div><span class="tag">${closeLabel}</span></div>${rows}</div>`;
@@ -1539,10 +1542,12 @@
             ? `${formatTime(Math.max(0, challenge.timeLimit - team.missionSeconds))} LEFT`
             : challenge.type === 'MYSTERY' ? 'QUIZ LIVE' : 'SOLVING'
           : 'AT LOCATION';
-        const action = !verified
+         const action = !verified
           ? `<button class="primary verify-team" data-team="${team.id}">Verify team ↗</button>`
           : supervisedScore
             ? `<div class="score-entry"><input class="score-input" type="number" min="0" max="10" step="1" inputmode="numeric" data-team="${team.id}" placeholder="0–10" aria-label="Score out of 10 for ${escapeHtml(team.name)}"><button class="outline score-team" data-team="${team.id}">Record /10</button></div>`
+             : challenge.type === 'CODING'
+               ? `<div class="score-entry"><span class="tag">Timer running</span><button class="outline reset-coding-timer" data-team="${team.id}">Reset 5:00 ↻</button></div>`
             : `<span class="tag">${challenge.type === 'CODING' ? 'Timer running' : 'Participant quiz'}</span>`;
         return `<div class="challenge-row volunteer-row"><span class="challenge-index">${escapeHtml(team.id.slice(-2))}</span><div class="challenge-info"><strong>${escapeHtml(team.name)} <span class="team-id">${escapeHtml(team.id)}</span></strong><span>${team.completed}/${team.totalMissions} cleared · ${team.score} points · ${escapeHtml(team.currentChallenge?.name || 'Waiting for verification')}</span></div><span class="status ${verified ? '' : 'ready'}">${status}</span>${action}</div>`;
       }).join('');
@@ -1555,6 +1560,17 @@
         const input = document.querySelector(`.score-input[data-team="${button.dataset.team}"]`);
         try { await api('/api/organizer/score', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team, score: input.value }) }); showToast('Score recorded. Next clue released.'); render(); } catch (error) { showToast(error.message); }
       }));
+       document.querySelectorAll('.reset-coding-timer').forEach((button) => button.addEventListener('click', async () => {
+         button.disabled = true;
+         try {
+           await api('/api/organizer/reset-coding-timer', { method: 'POST', body: JSON.stringify({ teamId: button.dataset.team }) });
+           showToast('Coding timer reset to five minutes.');
+           render();
+         } catch (error) {
+           button.disabled = false;
+           showToast(error.message);
+         }
+       }));
         scheduleRender(1000);
     }
     async function startMission(event) {

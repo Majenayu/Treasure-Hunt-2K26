@@ -1038,45 +1038,46 @@ function closeExpiredSurpriseRounds(now = Date.now()) {
 
 function ensureSurpriseRounds() {
   if (!Array.isArray(state.surpriseRounds)) state.surpriseRounds = [];
-  if (!Number.isFinite(Number(state.nextSurpriseAtSeconds))) {
-    state.nextSurpriseAtSeconds = SURPRISE_ROUND_FIRST_AT_SECONDS;
-  }
-  let changed = closeExpiredSurpriseRounds();
-  if (state.status !== 'LIVE') return changed;
+  return closeExpiredSurpriseRounds();
+}
 
-  const elapsed = eventElapsedSeconds();
-  while (elapsed >= state.nextSurpriseAtSeconds) {
-    const selectedIds = new Set(
-      state.surpriseRounds.flatMap((round) => (round.teams || []).map((entry) => entry.teamId)),
-    );
-    const candidates = [...teams.values()]
-      .filter((team) => team.active && !selectedIds.has(team.id))
-      .sort((a, b) => new Date(a.startedAt || 0).getTime() - new Date(b.startedAt || 0).getTime() || a.id.localeCompare(b.id))
-      .slice(0, SURPRISE_TEAM_LIMIT);
+function queueSurpriseInvite(team, completedChallenge) {
+  if (!team || !team.active || state.status !== 'LIVE') return false;
+  const alreadySelected = (state.surpriseRounds || []).some((round) => surpriseRoundEntry(round, team.id));
+  if (alreadySelected) return false;
+
+  let round = [...state.surpriseRounds]
+    .reverse()
+    .find((candidate) => candidate.status === 'OPEN' && (candidate.teams || []).length < SURPRISE_TEAM_LIMIT);
+  if (!round) {
     const openedAt = new Date().toISOString();
-    const round = {
+    round = {
       id: `surprise-${Date.now()}-${state.surpriseRounds.length + 1}`,
       number: state.surpriseRounds.length + 1,
-      scheduledAtSeconds: state.nextSurpriseAtSeconds,
+      scheduledAtSeconds: eventElapsedSeconds(),
       openedAt,
       closesAt: new Date(Date.now() + SURPRISE_ROUND_DURATION_MS).toISOString(),
       status: 'OPEN',
       location: 'M510',
-      teams: candidates.map((team) => ({
-        teamId: team.id,
-        status: 'PENDING',
-        rejectionCount: 0,
-        points: 0,
-        verifiedAt: null,
-        awardedAt: null,
-      })),
+      teams: [],
     };
     state.surpriseRounds.push(round);
-    state.nextSurpriseAtSeconds += SURPRISE_ROUND_INTERVAL_SECONDS;
-    writeAudit('SURPRISE ROUND OPENED', `Round ${round.number} called ${candidates.length} team${candidates.length === 1 ? '' : 's'} to M510`);
-    changed = true;
+    writeAudit('SURPRISE ROUND OPENED', `Round ${round.number} opened at a station transition`);
   }
-  return changed;
+
+  const nextChallenge = getTeamChallenge(team);
+  round.teams.push({
+    teamId: team.id,
+    status: 'PENDING',
+    rejectionCount: 0,
+    points: 0,
+    verifiedAt: null,
+    awardedAt: null,
+    triggeredAfter: completedChallenge?.name || 'previous station',
+    nextChallenge: nextChallenge?.name || 'finish',
+  });
+  writeAudit('SURPRISE INVITE SENT', `${team.id} moved from ${completedChallenge?.name || 'the previous station'} to ${nextChallenge?.name || 'the finish'} and was assigned to M510`, team.id);
+  return true;
 }
 
 function surpriseFreezeSeconds(team, now = Date.now()) {
@@ -1255,6 +1256,8 @@ function completeChallenge(team, challenge, elapsed, earnedPoints) {
   if (team.currentIndex >= team.route.length) {
     team.completedAt = new Date().toISOString();
     team.active = false;
+  } else {
+    queueSurpriseInvite(team, challenge);
   }
 }
 
@@ -1867,6 +1870,27 @@ app.post('/api/organizer/verify', requireAuth, (req, res) => {
   team.startedPauseSeconds = state.totalPausedSeconds;
   writeAudit('TEAM VERIFIED', `${team.id} verified at ${challenge.station} for ${challenge.type.toLowerCase()}`, req.user.username);
   res.json({ ok: true, team: publicTeam(team) });
+});
+
+app.post('/api/organizer/reset-coding-timer', requireAuth, (req, res) => {
+  if (!['organizer', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Organizer access required.' });
+  if (state.status !== 'LIVE') return res.status(409).json({ error: 'The circuit is currently paused.' });
+  const team = teams.get(String(req.body.teamId || '').trim().toUpperCase());
+  if (!team) return res.status(404).json({ error: 'Team not found.' });
+  const challenge = getTeamChallenge(team);
+  if (!challenge || challenge.type !== 'CODING' || team.currentChallenge !== challenge.id || !team.startedAt) {
+    return res.status(409).json({ error: 'This team does not have an active Coding timer.' });
+  }
+  if (req.user.checkpointType && req.user.checkpointType !== 'coding') {
+    return res.status(403).json({ error: 'This team is assigned to another checkpoint type.' });
+  }
+  if (req.user.checkpointLabel && req.user.checkpointLabel !== challenge.station) {
+    return res.status(403).json({ error: 'This team is assigned to another location.' });
+  }
+  team.startedAt = new Date().toISOString();
+  team.startedPauseSeconds = state.totalPausedSeconds;
+  writeAudit('CODING TIMER RESET', `${team.id} received a fresh five-minute Coding timer at ${challenge.station}`, req.user.username);
+  res.json({ ok: true, reset: true, timeLimit: challenge.timeLimit, team: publicTeam(team) });
 });
 
 app.post('/api/organizer/score', requireAuth, (req, res) => {
