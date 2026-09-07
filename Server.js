@@ -216,7 +216,7 @@ const challengeSeed = [
 
 const QUESTION_SET_COUNT = 10;
 const LOGIC_SET_COUNT = 2;
-const PUZZLE_SET_COUNT = 6;
+const PUZZLE_SET_COUNT = 3;
 const CODING_QUESTIONS = [
   {
     prompt: 'Q1 — The Missing Identification Number\nInput: 1 2 3 4 5 7 8 9 10\nWrite the program described and enter the output for the supplied input.',
@@ -514,6 +514,20 @@ function syncRiddleDefinitions() {
   }
 }
 
+function normalizeMissionSetCounts() {
+  for (const challenge of challenges.values()) {
+    if (!['LOGIC', 'PUZZLE'].includes(challenge.type)) continue;
+    const expectedCount = challenge.type === 'LOGIC' ? LOGIC_SET_COUNT : PUZZLE_SET_COUNT;
+    if (!Array.isArray(challenge.questionSets)) {
+      challenge.questionSets = makeQuestionSets(challenge);
+      continue;
+    }
+    if (challenge.questionSets.length > expectedCount) {
+      challenge.questionSets = challenge.questionSets.slice(0, expectedCount);
+    }
+  }
+}
+
 const baseRoute = challengeSeed.map((challenge) => challenge.id);
 const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false }]));
 const teams = new Map();
@@ -629,6 +643,7 @@ function hydrateSnapshot(snapshot) {
   baseRoute.splice(0, baseRoute.length, ...challengeSeed.map((challenge) => challenge.id));
   challenges.clear();
   for (const [id, challenge] of snapshot.challenges || []) challenges.set(id, challenge);
+  normalizeMissionSetCounts();
   syncRiddleDefinitions();
   teams.clear();
   for (const [id, team] of snapshot.teams || []) teams.set(id, team);
@@ -1489,7 +1504,7 @@ app.get('/api/admin/questions', requireAuth, requireAdmin, (req, res) => {
     plan: {
       coding: { total: 10, roundOne: 10, roundTwo: 10, perTeam: 1, mode: 'shared pool · one serial per team' },
       riddles: { total: 6, roundOne: 3, roundTwo: 3, perTeam: 3, mode: 'fixed order · no mixing' },
-      puzzles: { total: 36, setsPerRound: 6, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
+      puzzles: { total: 18, setsPerRound: 3, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
       logic: { total: 12, setsPerRound: 2, questionsPerSet: 3, perTeam: 0, mode: 'assigned set · volunteer score' },
       mystery: { total: 40, roundOne: 20, roundTwo: 20, perTeam: 20, mode: 'uploaded set · one at a time' },
     },

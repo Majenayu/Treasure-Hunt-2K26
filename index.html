@@ -1305,8 +1305,8 @@
       const questions = data.rounds;
       const plan = data.plan;
        const planCard = (label, detail, mode) => {
-         const updatedLabel = label === 'Puzzle / Logic' ? 'Logic + Puzzle sets' : label;
-         const updatedDetail = label === 'Puzzle / Logic' ? '2 + 2 · 6 + 6' : detail;
+         const updatedLabel = label === 'Puzzle / Logic' ? 'Logic + Puzzle / Wordsearch / Crossword sets' : label;
+         const updatedDetail = label === 'Puzzle / Logic' ? '2 + 2 · 3 + 3' : detail;
          const updatedMode = label === 'Coding questions' ? '10-question pool · 1 serial per team'
            : label === 'Puzzle / Logic' ? 'Volunteer score · no team questions'
              : label === 'Mystery quiz' ? 'Set 1 + Set 2 · 1 at a time' : mode;
@@ -1450,7 +1450,13 @@
        const assignedSet = challenge?.type === 'MYSTERY'
          ? challenge.quizRound
          : challenge?.questionSet;
-       const assignedSetTotal = challenge?.type === 'CODING' ? 10 : challenge?.type === 'MYSTERY' ? 20 : 3;
+       const assignedSetTotal = challenge?.type === 'CODING'
+         ? 10
+         : challenge?.type === 'MYSTERY'
+           ? 20
+           : challenge?.type === 'LOGIC'
+             ? 2
+             : 3;
         const waitingContent = waitingForVolunteer
           ? `<div class="mission-kicker">Set ${assignedSet || 1} / ${assignedSetTotal} assigned</div><h3>Waiting for the volunteer.</h3><p class="mission-prompt">You’re at ${escapeHtml(challenge.location)}. Show your team code to the ${escapeHtml(challenge.type.toLowerCase())} volunteer. Set ${assignedSet || 1} is reserved for your team; questions stay locked until verification.</p>`
           : `<p class="mission-prompt">${escapeHtml(challenge.prompt)}</p><p class="card-subtitle" style="margin-top:14px">A location volunteer will verify your team before the mission starts.</p>`;
