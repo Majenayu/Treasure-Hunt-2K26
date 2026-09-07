@@ -528,6 +528,20 @@ function normalizeMissionSetCounts() {
   }
 }
 
+function normalizeCodingPrompts() {
+  for (const challenge of challengeSeed) {
+    if (challenge.type === 'CODING') challenge.prompt = stripEmbeddedCodingOutput(challenge.prompt);
+  }
+  for (const challenge of challenges.values()) {
+    if (challenge.type === 'CODING') challenge.prompt = stripEmbeddedCodingOutput(challenge.prompt);
+    for (const questionSet of challenge.questionSets || []) {
+      for (const question of questionSet) {
+        if (question?.prompt) question.prompt = stripEmbeddedCodingOutput(question.prompt);
+      }
+    }
+  }
+}
+
 const baseRoute = challengeSeed.map((challenge) => challenge.id);
 const challenges = new Map(challengeSeed.map((challenge) => [challenge.id, { ...challenge, questionSets: makeQuestionSets(challenge), disabled: false }]));
 const teams = new Map();
@@ -644,6 +658,7 @@ function hydrateSnapshot(snapshot) {
   challenges.clear();
   for (const [id, challenge] of snapshot.challenges || []) challenges.set(id, challenge);
   normalizeMissionSetCounts();
+  normalizeCodingPrompts();
   syncRiddleDefinitions();
   teams.clear();
   for (const [id, team] of snapshot.teams || []) teams.set(id, team);
@@ -900,9 +915,17 @@ function publicChallenge(challenge) {
   return safeChallenge;
 }
 
+function stripEmbeddedCodingOutput(prompt) {
+  return String(prompt || '')
+    .replace(/(?:^|\r?\n)\s*(?:expected\s+)?output\s*:\s*[^\r\n]*/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function publicQuestion(question) {
   if (!question) return null;
   const { answer, ...safeQuestion } = question;
+  if (safeQuestion.prompt) safeQuestion.prompt = stripEmbeddedCodingOutput(safeQuestion.prompt);
   return safeQuestion;
 }
 
@@ -920,7 +943,7 @@ function questionOptions(value) {
 }
 
 function adminQuestionFrom(body = {}) {
-  const prompt = String(body.prompt || '').trim();
+  const prompt = stripEmbeddedCodingOutput(body.prompt);
   const answer = String(body.answer || '').trim();
   const options = questionOptions(body.options);
   if (!prompt) throw new Error('A question prompt is required.');
@@ -1528,7 +1551,9 @@ app.patch('/api/admin/questions/:id', requireAuth, requireAdmin, (req, res) => {
   const questionIndex = Number(req.body.questionIndex);
   const current = stored.questionSets[setIndex]?.[questionIndex];
   if (!current) return res.status(404).json({ error: 'Question item not found.' });
-  const prompt = String(req.body.prompt || '').trim();
+  const prompt = stored.type === 'CODING'
+    ? stripEmbeddedCodingOutput(req.body.prompt)
+    : String(req.body.prompt || '').trim();
   const options = questionOptions(req.body.options);
   if (!prompt) return res.status(400).json({ error: 'A question prompt is required.' });
   const answer = String(req.body.answer || '').trim() || current.answer;
